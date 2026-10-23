@@ -1,167 +1,39 @@
 ---
-title: ios美区教程
-description: The components every page can use, and the MDX that renders each one.
+title: 苹果美区注册账号最稳方法
+description: 适用开发者和AI产品爱好者的完整指南.
 sidebar:
   order: 4
 ---
 
-Every `.mdx` file can use these components without an import. Each one is a file in `src/components/ui/`, so you can change how it looks or works.
+## 访问[苹果账号注册页面](https://www.apple.com/account/ios/register/)美区Apple ID注册页面。
+浏览器打开[appleid.apple.com](https://appleid.apple.com/)，点击右上角创建*创建您的Apple ID*，使用未注册的邮箱（Gmail，Outlook等国际有限最佳，也可以是qq邮箱）。
 
-## Aside
+## 填写注册信息
+*国家/地区*必须选择`美国`，生日选择满18岁以上日期。其他信息如实填写，手机号填写国内的即可（+86）。
 
-Set a note, tip, caution, or warning apart from the text around it.
+## 验证邮箱和手机号
+查收邮箱和短信中的验证码，依次输入完成验证。通常1分钟内可以收到，若未收到检查垃圾邮件文件夹。
 
-<Aside type="note">
-  Pages are validated at build time.
-</Aside>
+## 登录并前往 APP Store (重点)
+在iPhone/iPad的App Store中登录新账号（不要再iCloud登录）。【设置】 - 【个人信息】 - 【媒体与购买项目】 - 【退出登录】 - 【使用其他App ID】。
+首次登录（需要随便先下载一个APP才会有提示）会弹出*检查账户信息*提示，点击*检查*。
 
-<Aside type="caution" title="Before you deploy">
-  Set `site` in `astro.config.ts` to your production URL.
-</Aside>
+## 同意条款并填写付款信息
+勾选同意条款，付款方式选择【无】。账单地址填写免税州地址（推荐俄勒冈州、特拉华州）
 
-```mdx
-<Aside type="note">
-  Pages are validated at build time.
-</Aside>
+## 生成美国地址
+访问 [meiguodizhi.com/](https://www.meiguidizhi.com/)，点击【俄勒冈州地址】或【特拉华州地址】生成免税州地址，
+复制以下信息：
+`姓名、街道、城市、州、邮编、电话`
 
-<Aside type="caution" title="Before you deploy">
-  Set `site` in `astro.config.ts` to your production URL.
-</Aside>
-```
+## 填写地址信息并完成
+将生成的美国地址信息粘贴到对应字段，点击【下一步】完成设置。现在可以自由使用下载美区应用啦。
 
-| Prop | Value |
-|---|---|
-| `type` | `note` (default), `tip`, `caution`, or `danger` |
-| `title` | Text above the content. Defaults to the type's name. |
-| `icon` | Any `ph:` icon name, in place of the type's icon. |
-
-For a title with formatting, pass it as a slot: `<Fragment slot="title">Uses <code>env</code></Fragment>`.
-
-## Steps
-
-Number a procedure. Each step has a title and its own content.
-
-<Steps>
-  <Step title="Create the page">
-    Add `src/content/docs/deploy.mdx` with a `title`.
-  </Step>
-  <Step title="Preview it">
-    Run `npm run dev` and open the page.
-  </Step>
-</Steps>
+### 访问 [shop.pockty.io](https://shop.pockty.io/) 购买APP Store 礼品卡，获取到卡密复制到手机 APP Store 中【账户】-【兑换充值卡或代码】。
 
 ```mdx
-<Steps>
-  <Step title="Create the page">
-    Add `src/content/docs/deploy.mdx` with a `title`.
-  </Step>
-  <Step title="Preview it">
-    Run `npm run dev` and open the page.
-  </Step>
-</Steps>
+Tips:
+- 建议保持美区账号仅用于APP Store 购买，日常iCloud使用国区账号。需要付费购买APP时，可使用礼品卡充值（淘宝、美团购买）。避免频繁
+切换地区，可能导致订阅服务中断
+  
 ```
-
-| Prop | Value |
-|---|---|
-| `start` on `Steps` | The first step's number. Defaults to 1. |
-| `title` on `Step` | The step's heading. Also accepts a `title` slot. |
-
-## Tabs
-
-Show the same content in several variants. Give tabs a `syncKey`, and the reader's choice carries over to every set of tabs with the same key.
-
-<Tabs syncKey="os">
-  <TabItem label="macOS">
-    Press <kbd>⌘</kbd> <kbd>K</kbd> to search.
-  </TabItem>
-  <TabItem label="Windows">
-    Press <kbd>Ctrl</kbd> <kbd>K</kbd> to search.
-  </TabItem>
-</Tabs>
-
-```mdx
-<Tabs syncKey="os">
-  <TabItem label="macOS">
-    Press <kbd>⌘</kbd> <kbd>K</kbd> to search.
-  </TabItem>
-  <TabItem label="Windows">
-    Press <kbd>Ctrl</kbd> <kbd>K</kbd> to search.
-  </TabItem>
-</Tabs>
-```
-
-| Prop | Value |
-|---|---|
-| `syncKey` on `Tabs` | Tabs with the same key switch together, and remember the choice. |
-| `label` on `TabItem` | The tab's name. Required. |
-
-## Package managers
-
-Write an install command once and show it for npm, pnpm, Yarn, and Bun.
-
-<PackageManagers pkg="your-package" />
-
-```mdx
-<PackageManagers pkg="your-package" />
-```
-
-Add `dev` for a dev dependency, or `type="run" args="build"` for a script.
-
-## Cards
-
-Link readers to the next places to go, in a grid that stacks on small screens.
-
-<CardGrid>
-  <Card title="Write a page" icon="ph:pencil-simple">
-    Create an `.mdx` file in `src/content/docs/`.
-  </Card>
-  <Card title="Change the theme" icon="ph:palette">
-    Edit the colour and type tokens in `src/styles/globals.css`.
-  </Card>
-</CardGrid>
-
-```mdx
-<CardGrid>
-  <Card title="Write a page" icon="ph:pencil-simple">
-    Create an `.mdx` file in `src/content/docs/`.
-  </Card>
-  <Card title="Change the theme" icon="ph:palette">
-    Edit the colour and type tokens in `src/styles/globals.css`.
-  </Card>
-</CardGrid>
-```
-
-| Prop | Value |
-|---|---|
-| `title` on `Card` | The card's heading. Also accepts a `title` slot. |
-| `icon` on `Card` | Any `ph:` icon name. Also accepts an `icon` slot. |
-
-Icons come from [Phosphor](https://phosphoricons.com): use any name with the `ph:` prefix.
-
-## Partials
-
-Write a passage once and include it on any page. Partials live in `src/content/partials/`.
-
-<Render file="example" />
-
-```mdx
-<Render file="example" />
-```
-
-## Restyle any part
-
-Every part of every component has a `data-slot` attribute, so you can restyle one piece from `src/styles/globals.css` without editing the component.
-
-```css title="src/styles/globals.css"
-[data-slot="card-title"] {
-  letter-spacing: -0.01em;
-}
-```
-
-Corners come from two tokens in the same file: `--nb-radius` for cards, callouts, code blocks and buttons, and `--nb-radius-sm` for the small marks inside them. Change them to re-round the whole site.
-
-## Add more
-
-Accordions, file trees, link cards, embeds, and more install from the registry when you need them. Each one lands as a file in `src/components/ui/`, like the components above.
-
-<PackageManagers type="dlx" pkg="@cloudflare/nimbus-docs" args="add accordion" />
