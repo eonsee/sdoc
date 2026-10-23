@@ -14,7 +14,7 @@ const nimbusConfig = defineNimbusConfig({
   title: "Nimbus",
   // CHANGE_ME: a one-line description of your docs — used for meta + OG.
   description: "Nimbus, authoring tool for docs",
-  locale: "en",
+  locale: "zh-CN",
   // CHANGE_ME: your repository — shown as the GitHub link in the header.
   github: "https://github.com/cloudflare/nimbus",
   socialImageAlt: "Nimbus documentation preview",
