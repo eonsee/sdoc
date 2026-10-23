@@ -1,0 +1,46 @@
+{
+  "$schema": "https://nimbus-docs.com/schema/nimbus.json",
+  "version": "0.8.0",
+  "lastReviewedNimbusVersion": "0.19.0",
+  "templatesTag": "templates-v0.8.0",
+  "variant": "starter",
+  "registry": "https://nimbus-docs.com/registry",
+  "install": {
+    "root": "src",
+    "aliases": {
+      "@/*": "src/*"
+    }
+  },
+  "components": [
+    {
+      "slug": "cn",
+      "type": "registry:lib",
+      "version": "0.19.0",
+      "source": "https://nimbus-docs.com/registry",
+      "hash": "sha256:7c54894573a1398333b41a63838db5de40ba05ad3fdb71048414baf912bb0070",
+      "files": [
+        "src/lib/cn.ts"
+      ],
+      "fileHashes": {
+        "src/lib/cn.ts": "sha256:4575f5bcc29804b00c7cc1e3090aec2194b462bdd3c33a5620dc47d09bfe26d8"
+      }
+    },
+    {
+      "slug": "banner",
+      "type": "registry:ui",
+      "version": "0.19.0",
+      "source": "https://nimbus-docs.com/registry",
+      "hash": "sha256:f35476d27f3d99f189fc43d006eadc2dc26fc9bcc51f93717c9a98378a0a9787",
+      "files": [
+        "src/components/ui/banner/Banner.astro",
+        "src/components/ui/banner/banner.client.ts",
+        "src/components/ui/banner/index.ts"
+      ],
+      "fileHashes": {
+        "src/components/ui/banner/Banner.astro": "sha256:ef016ab35e723488c5467b3437631f8f05e2f387b467b543cf260eca798136e8",
+        "src/components/ui/banner/banner.client.ts": "sha256:c3a61ef78e1df881a06338247623907b63ef30251925a2172459e69a94202fb6",
+        "src/components/ui/banner/index.ts": "sha256:916c7b79a17b41fa38a217fe92f191ed6427558bfc1be603f1e4c88d3b297370"
+      }
+    }
+  ]
+}
