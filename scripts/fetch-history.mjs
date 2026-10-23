@@ -7,37 +7,60 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 const status = {
   shallowBefore: null,
-  shallowAfter: null,
-  unshallowed: false,
+  unshallowedOrigin: false,
+  shallowAfterOrigin: null,
+  unshallowedGithub: false,
+  shallowAfterGithub: null,
   commits: null,
   lastCommit: null,
   error: null,
 };
 
 const sanitize = (value) => String(value).replace(/https?:\/\/\S+/g, "<url>");
+const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
 const git = (args, options = {}) =>
-  execFileSync("git", args, {
-    encoding: "utf8",
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  execFileSync("git", args, { encoding: "utf8", env, timeout: 120_000, ...options }).trim();
+const isShallow = () => git(["rev-parse", "--is-shallow-repository"]);
+const unshallow = (remote) =>
+  execFileSync("git", ["fetch", "--unshallow", remote], {
+    stdio: "inherit",
+    env,
     timeout: 120_000,
-    ...options,
-  }).trim();
+  });
 
 try {
-  status.shallowBefore = git(["rev-parse", "--is-shallow-repository"]);
+  status.shallowBefore = isShallow();
+
   if (status.shallowBefore === "true") {
-    // No `.trim()` here: this call inherits stdio and returns null.
-    execFileSync("git", ["fetch", "--unshallow"], {
-      stdio: "inherit",
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-      timeout: 120_000,
-    });
-    status.unshallowed = true;
-    console.log("Fetched full git history for last-updated dates.");
+    try {
+      unshallow("origin");
+      status.unshallowedOrigin = true;
+    } catch (error) {
+      status.error = sanitize(error instanceof Error ? error.message : String(error));
+    }
+    status.shallowAfterOrigin = isShallow();
   }
-  status.shallowAfter = git(["rev-parse", "--is-shallow-repository"]);
+
+  // Vercel's origin can itself be a shallow mirror, so unshallowing it can be
+  // a no-op. The repo is public, so fetch the real history straight from
+  // GitHub, built from the environment Vercel exposes.
+  if (status.shallowAfterOrigin === "true") {
+    const owner = process.env.VERCEL_GIT_REPO_OWNER;
+    const slug = process.env.VERCEL_GIT_REPO_SLUG;
+    if (owner && slug) {
+      try {
+        unshallow(`https://github.com/${owner}/${slug}.git`);
+        status.unshallowedGithub = true;
+      } catch (error) {
+        status.error = sanitize(error instanceof Error ? error.message : String(error));
+      }
+      status.shallowAfterGithub = isShallow();
+    }
+  }
+
   status.commits = Number(git(["rev-list", "--count", "HEAD"]));
   status.lastCommit = git(["log", "-1", "--format=%cI"]);
+  console.log(`Git history: shallow ${isShallow()}, ${status.commits} commit(s).`);
 } catch (error) {
   status.error = sanitize(error instanceof Error ? error.message : String(error));
   console.warn("Could not fetch full git history; pages build without last-updated dates.");
