@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "astro",
-  "buildCommand": "npm run build",
+  "buildCommand": "git fetch --unshallow || true; npm run build",
   "outputDirectory": "dist"
 }
