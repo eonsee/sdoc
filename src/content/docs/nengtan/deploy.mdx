@@ -1,0 +1,660 @@
+---
+title: 部署与验收
+description: 把若依、采集服务、MySQL、Redis、TDengine、EMQX 部署上线，并完成安全、备份、监控和验收检查。
+sidebar:
+  order: 5
+---
+
+这一章把系统从“本机能跑”变成“现场能稳定运行”。覆盖服务器规划、Docker 编排、前后端部署、HTTPS、EMQX 权限、备份监控和上线检查。
+
+## 1. 部署拓扑
+
+### 1.1 单机演示 / 小型项目
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│ 一台 8C/16G/500G 服务器                                   │
+│                                                          │
+│  Nginx ── RuoYi 应用 ── Collector                        │
+│    │          │            │                             │
+│    └──────────┼────────────┼── MySQL / Redis             │
+│               └────────────┼── TDengine                  │
+│                            └── EMQX                      │
+└──────────────────────────────────────────────────────────┘
+```
+
+适合：POC、演示、点位少于 1,000、单园区。
+
+### 1.2 生产小型
+
+```text
+┌─────────────────────┐      ┌─────────────────────────┐
+│ 应用服务器            │      │ 数据服务器               │
+│ Nginx                │      │ MySQL                    │
+│ RuoYi 应用            │──────│ Redis                    │
+│ Collector            │      │ TDengine                 │
+│ EMQX                 │      │ MinIO                    │
+└─────────────────────┘      └─────────────────────────┘
+```
+
+适合：正式生产、点位 1,000～5,000、需要独立备份。
+
+### 1.3 生产中型
+
+```text
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Web 服务器     │  │ 应用服务器     │  │ 数据服务器     │
+│ Nginx         │  │ RuoYi ×2      │  │ MySQL 主从     │
+│               │  │ Collector ×2  │  │ Redis 哨兵     │
+└──────────────┘  └──────────────┘  │ TDengine 集群  │
+                                     │ EMQX 集群      │
+                                     └──────────────┘
+```
+
+适合：多园区、点位超过 5,000、有高可用要求。不要在没有运维能力时直接上这套。
+
+## 2. 服务器规划
+
+### 2.1 配置建议
+
+| 组件 | CPU | 内存 | 磁盘 | 说明 |
+| --- | --- | --- | --- | --- |
+| Nginx | 1～2 核 | 1～2 GB | 20 GB | 静态资源 + 反向代理 |
+| RuoYi 应用 | 2～4 核 | 4～8 GB | 50 GB | JVM 堆 2～4 GB |
+| Collector | 2 核 | 2～4 GB | 50 GB | 协议轮询 + 批量写 |
+| MySQL | 2～4 核 | 4～8 GB | 200 GB+ | SSD，独立数据盘 |
+| Redis | 1～2 核 | 2～4 GB | 20 GB | 可与应用同机 |
+| TDengine | 4 核 | 8～16 GB | 500 GB+ | SSD，按保留期估算 |
+| EMQX | 2～4 核 | 4～8 GB | 50 GB | 连接数和消息速率决定 |
+| MinIO | 2 核 | 2～4 GB | 按报告量 | 可与应用同机 |
+
+### 2.2 容量估算
+
+**时序数据**：1,000 点位、每分钟一条、每条按 30 字节原始估算：
+
+```text
+1,000 × 60 × 24 × 365 × 30 ≈ 15.8 GB/年（未压缩）
+```
+
+时序库压缩后通常降到 1/3～1/10。按 3 年保留，预留 **50～150 GB** 比较稳妥，具体看标签基数、索引和副本数。
+
+**MySQL**：业务表数据量小，主要是日志和统计结果。1,000 点位的小时/日/月统计，一年也在千万级以内。预留 100～200 GB。
+
+**EMQX**：每个网关一个长连接。1,000 个网关的连接内存开销不大，瓶颈通常在消息速率和磁盘队列。按每网关 1 分钟一条估算，约 17 条/秒，很轻松。
+
+**磁盘**：数据库和时序库一定要独立数据盘，不要和系统盘混用。日志单独限制大小，避免把磁盘打满。
+
+## 3. Docker Compose 编排
+
+以下是一个**单机演示/小型生产**的 Compose 示例。正式环境请把密码换成强密码，并通过环境变量或密钥管理注入，不要提交到 Git。
+
+```yaml title="docker-compose.yml"
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: nengtan-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: change-me
+      MYSQL_DATABASE: ry-vue
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.2
+    container_name: nengtan-redis
+    restart: always
+    command: ["redis-server", "--requirepass", "change-me", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "change-me", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  tdengine:
+    image: tdengine/tdengine:3.3.0.0
+    container_name: nengtan-tdengine
+    restart: always
+    environment:
+      TAOS_FQDN: tdengine
+      TZ: Asia/Shanghai
+    ports:
+      - "6030:6030"
+      - "6041:6041"
+    volumes:
+      - tdengine-data:/var/lib/taos
+      - tdengine-log:/var/log/taos
+
+  emqx:
+    image: emqx/emqx:5.8.0
+    container_name: nengtan-emqx
+    restart: always
+    environment:
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: change-me
+      TZ: Asia/Shanghai
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "8883:8883"
+      - "18083:18083"
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+
+  minio:
+    image: minio/minio:latest
+    container_name: nengtan-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: change-me
+      MINIO_ROOT_PASSWORD: change-me-too
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  nginx:
+    image: nginx:1.26
+    container_name: nengtan-nginx
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/cert:/etc/nginx/cert:ro
+      - ./dist:/usr/share/nginx/html:ro
+      - nginx-log:/var/log/nginx
+
+volumes:
+  mysql-data:
+  redis-data:
+  tdengine-data:
+  tdengine-log:
+  emqx-data:
+  emqx-log:
+  minio-data:
+  nginx-log:
+```
+
+启动：
+
+```bash
+docker compose up -d
+docker compose ps
+docker compose logs -f mysql
+```
+
+<Aside type="warning" title="不要把 3306/6379/1883 直接暴露到公网">
+  上面的端口映射是为了本机调试。生产环境只暴露 80/443，数据库、Redis、MQTT 走内网或 Docker 网络。需要远程访问时用 VPN 或堡垒机。
+</Aside>
+
+## 4. 后端部署
+
+### 4.1 构建
+
+```bash
+mvn clean package -DskipTests
+```
+
+产物：
+
+```text
+ruoyi-admin/target/ruoyi-admin.jar
+```
+
+### 4.2 配置
+
+把生产配置放在 `application-prod.yml`，或通过环境变量覆盖：
+
+```yaml title="application-prod.yml（节选）"
+spring:
+  datasource:
+    druid:
+      master:
+        url: jdbc:mysql://127.0.0.1:3306/ry-vue?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=Asia/Shanghai
+        username: ry
+        password: ${DB_PASSWORD}
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    password: ${REDIS_PASSWORD}
+    database: 0
+
+tdengine:
+  url: jdbc:TAOS://127.0.0.1:6030/energy?charset=utf8
+  username: root
+  password: ${TDENGINE_PASSWORD}
+
+mqtt:
+  broker: tcp://127.0.0.1:1883
+  username: collector
+  password: ${MQTT_PASSWORD}
+
+ruoyi:
+  profile: /data/upload
+```
+
+启动：
+
+```bash
+java -jar ruoyi-admin.jar \
+  --spring.profiles.active=prod \
+  -Xms2g -Xmx4g \
+  -XX:+UseG1GC \
+  -Duser.timezone=Asia/Shanghai
+```
+
+### 4.3 systemd
+
+```ini title="/etc/systemd/system/nengtan.service"
+[Unit]
+Description=Nengtan RuoYi Application
+After=network.target
+
+[Service]
+Type=simple
+User=nengtan
+WorkingDirectory=/opt/nengtan
+EnvironmentFile=/opt/nengtan/env
+ExecStart=/usr/bin/java -Xms2g -Xmx4g -XX:+UseG1GC \
+  -Duser.timezone=Asia/Shanghai \
+  -jar /opt/nengtan/ruoyi-admin.jar --spring.profiles.active=prod
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/nengtan/app.log
+StandardError=append:/var/log/nengtan/app.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now nengtan
+sudo systemctl status nengtan
+```
+
+<Aside type="caution" title="时区必须一致">
+  服务器、JVM、MySQL、TDengine、EMQX、浏览器最好统一用 `Asia/Shanghai`。时区不一致会导致“数据存在但查不到”“日报跨天”“碳核算期间错位”这类很难查的问题。
+</Aside>
+
+## 5. 前端部署
+
+### 5.1 构建
+
+在 RuoYi-Vue3 项目里：
+
+```bash
+npm install
+npm run build:prod
+```
+
+产物在 `dist/`。确认 `.env.production` 里的接口前缀：
+
+```text
+VITE_APP_BASE_API = '/prod-api'
+```
+
+### 5.2 Nginx 配置
+
+```nginx title="/etc/nginx/conf.d/nengtan.conf"
+server {
+    listen 80;
+    server_name energy.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name energy.example.com;
+
+    ssl_certificate     /etc/nginx/cert/fullchain.pem;
+    ssl_certificate_key /etc/nginx/cert/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript;
+    gzip_min_length 1024;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /prod-api/ {
+        # Nginx 在容器里，后端在宿主机；用 host.docker.internal 指向宿主机
+        proxy_pass http://host.docker.internal:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location /prod-api/ws/ {
+        proxy_pass http://host.docker.internal:8080/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|svg|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+}
+```
+
+<Aside type="note" title="WebSocket 路径按实际改">
+  若依的 WebSocket 路径和你的业务路径可能不同。`proxy_pass` 的尾斜杠会去掉 `/prod-api/` 前缀，配置错会 404。先用浏览器开发者工具看握手请求的 URL，再对照 Nginx 配置。
+</Aside>
+
+<Aside type="note" title="容器里的 127.0.0.1 不是宿主机">
+  上面的 Nginx 跑在 Docker 里，后端用 systemd 跑在宿主机，所以 `proxy_pass` 用 `host.docker.internal`。Compose 里已经加了 `host.docker.internal:host-gateway`；Linux 上 Docker 版本太老时可能不支持，可以改成宿主机的网桥 IP，或者把后端也加进 Compose，用服务名 `nengtan-app:8080`。
+</Aside>
+
+### 5.3 前端常见问题
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 登录 404 | `VITE_APP_BASE_API` 与 Nginx 路径不一致 | 统一为 `/prod-api` |
+| 刷新页面 404 | 没配 `try_files` | 加 `try_files $uri $uri/ /index.html` |
+| 接口 502 | 后端没启动/端口错 | 查 `systemctl status` 和 Nginx 日志 |
+| WebSocket 连不上 | 没加 Upgrade 头 | 补 `proxy_set_header` |
+| 静态资源旧版本 | 缓存 | 文件名带 hash，或调整缓存策略 |
+
+## 6. HTTPS 与证书
+
+- 云厂商申请免费证书，或 Let's Encrypt。
+- 证书放到 `./nginx/cert/`，权限 600。
+- 80 端口只做跳转。
+- 开启 HSTS 前确认所有子域都支持 HTTPS。
+- 证书到期前 30 天续期，加监控。
+
+```bash
+# Let's Encrypt 示例
+sudo certbot certonly --webroot -w /usr/share/nginx/html -d energy.example.com
+```
+
+## 7. EMQX 配置
+
+### 7.1 基本设置
+
+<Steps>
+  <Step title="登录 Dashboard">
+    默认地址 `http://服务器IP:18083`，默认账号 `admin`，密码看 Compose 里的 `EMQX_DASHBOARD__DEFAULT_PASSWORD`。第一次登录后立即改密码。
+  </Step>
+  <Step title="创建认证用户">
+    在“访问控制 → 认证”里启用内置数据库，创建：
+    - `collector`：采集服务账号，只订阅。
+    - `gateway-SH01`：网关账号，只发布自己的 Topic。
+  </Step>
+  <Step title="配置 ACL">
+    按最小权限授权：采集服务只能订阅 `energy/+/+/telemetry` 和 `energy/+/+/status`；网关只能发布 `energy/SH01/#`。
+  </Step>
+  <Step title="开启 TLS">
+    配置 8883 监听器，上传证书。网关如果支持 TLS，优先用 8883；不支持再用内网 1883。
+  </Step>
+</Steps>
+
+ACL 文件的概念示例（具体语法以你的 EMQX 版本为准）：
+
+```erlang
+%% /opt/emqx/etc/acl.conf
+{allow, {username, "collector"}, subscribe, ["energy/+/+/telemetry", "energy/+/+/status"]}.
+{allow, {username, "gateway-SH01"}, publish, ["energy/SH01/#"]}.
+{deny, all, subscribe, ["#"]}.
+{deny, all, publish, ["#"]}.
+```
+
+### 7.2 关键参数
+
+| 参数 | 建议 | 说明 |
+| --- | --- | --- |
+| `max_connections` | 按网关数 × 2 | 留余量 |
+| `keepalive` | 60 秒 | 网关心跳 |
+| `session_expiry_interval` | 1 小时 | 断线重连保留会话 |
+| `max_packet_size` | 1 MB | 防止大报文 |
+| `retained` | 只用于 status | 遥测不要 retained |
+| `QoS` | 1 | 至少一次，消费端去重 |
+
+### 7.3 网关侧参数
+
+```text
+Broker: tcp://energy.example.com:8883（或内网 1883）
+ClientId: gateway-SH01-01
+Username: gateway-SH01
+Password: ******
+KeepAlive: 60
+CleanSession: false
+Topic: energy/SH01/GW-SH01-01/telemetry
+QoS: 1
+Last Will: energy/SH01/GW-SH01-01/status  payload=offline  retain=true
+```
+
+## 8. 数据库初始化与备份
+
+### 8.1 MySQL
+
+初始化：
+
+```bash
+mysql -uroot -p -e "CREATE DATABASE \`ry-vue\` DEFAULT CHARSET utf8mb4;"
+mysql -uroot -p ry-vue < sql/ry_2025xxxx.sql
+mysql -uroot -p ry-vue < sql/quartz.sql
+mysql -uroot -p ry-vue < sql/energy.sql
+```
+
+备份脚本：
+
+```bash title="/opt/nengtan/backup/mysql-backup.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+DATE=$(date +%F)
+DIR=/opt/nengtan/backup/mysql
+mkdir -p "$DIR"
+mysqldump -uroot -p"$DB_PASSWORD" \
+  --single-transaction --routines --triggers \
+  ry-vue | gzip > "$DIR/ry-vue-$DATE.sql.gz"
+find "$DIR" -name "*.sql.gz" -mtime +30 -delete
+```
+
+加入 crontab：
+
+```text
+30 2 * * * /opt/nengtan/backup/mysql-backup.sh
+```
+
+### 8.2 TDengine
+
+```bash
+# 备份
+taosdump -h 127.0.0.1 -u root -p -D energy -o /opt/nengtan/backup/tdengine
+
+# 恢复
+taosdump -h 127.0.0.1 -u root -p -i /opt/nengtan/backup/tdengine
+```
+
+按保留策略定期清理：
+
+```sql
+ALTER DATABASE energy KEEP 1095;
+```
+
+### 8.3 恢复演练
+
+备份没有验证过，等于没有备份。每季度至少做一次：
+
+1. 在测试环境恢复 MySQL 和 TDengine。
+2. 启动应用，检查登录、监控、报表、碳核算。
+3. 记录恢复耗时和数据缺失范围。
+4. 更新应急预案。
+
+## 9. 监控与告警
+
+### 9.1 关键指标
+
+| 层面 | 指标 | 告警阈值示例 |
+| --- | --- | --- |
+| 应用 | JVM 堆使用率 | 大于 85% 持续 10 分钟 |
+| 应用 | 接口 P95 延迟 | 大于 1 秒 |
+| 应用 | 错误日志速率 | 大于 10 条/分钟 |
+| 采集 | 采集延迟 | 大于 5 分钟 |
+| 采集 | 队列积压 | 大于 10,000 |
+| MQTT | 在线网关数 | 低于预期 90% |
+| MQTT | 消息丢弃数 | 大于 0 |
+| TDengine | 写入失败 | 大于 0 |
+| MySQL | 连接数/慢查询 | 连接数大于 80%，慢查询增加 |
+| 服务器 | CPU/内存/磁盘 | 磁盘大于 80% |
+| 业务 | 通信在线率 | 低于 98% |
+| 业务 | 数据完整率 | 低于 98% |
+
+### 9.2 Spring Boot Actuator
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: nengtan
+```
+
+Prometheus 抓取：
+
+```yaml
+scrape_configs:
+  - job_name: nengtan
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['10.0.0.10:8080']
+```
+
+### 9.3 日志
+
+- 应用日志按天滚动，保留 30 天。
+- Collector 日志单独目录，记录每个网关的轮询失败原因。
+- Nginx 访问日志保留 30 天，错误日志保留 90 天。
+- 日志里不要打印密码、Token、完整报文中的敏感字段。
+
+## 10. 上线检查清单
+
+### 10.1 安全
+
+- [ ] 所有默认密码已修改：MySQL、Redis、EMQX、MinIO、若依 admin。
+- [ ] 数据库、Redis、MQTT 端口未暴露公网。
+- [ ] 生产环境使用 HTTPS，HTTP 自动跳转。
+- [ ] MQTT 使用账号密码，必要时启用 TLS。
+- [ ] 每个网关一个账号，ACL 限制到自己的 Topic。
+- [ ] 若依菜单、按钮、数据权限按角色配置。
+- [ ] 删除测试账号、测试菜单、测试数据。
+- [ ] 文件上传目录不允许执行脚本。
+- [ ] 服务器防火墙只开放 80/443 和运维白名单。
+- [ ] 日志中无明文密码和 Token。
+
+### 10.2 数据
+
+- [ ] 所有服务器、数据库、JVM 时区一致。
+- [ ] NTP 已配置，时间偏差小于 5 秒。
+- [ ] 时序库保留策略已设置。
+- [ ] MySQL 每日备份，TDengine 定期备份。
+- [ ] 备份恢复演练通过。
+- [ ] 采集数据与现场表计核对通过。
+- [ ] 总表与分表对账通过。
+- [ ] 碳核算结果与手工 Excel 对比通过。
+
+### 10.3 性能与可靠性
+
+- [ ] 100 个点位并发采集压测通过。
+- [ ] 驾驶舱首屏小于 3 秒。
+- [ ] 趋势查询 30 天数据小于 2 秒。
+- [ ] Collector 断线重连测试通过。
+- [ ] 网关断网 1 小时补传测试通过。
+- [ ] 应用重启后采集不丢数据。
+- [ ] 磁盘使用率低于 70%。
+
+### 10.4 运维
+
+- [ ] 监控大盘可用，告警能发到人。
+- [ ] 日志路径、滚动策略、保留天数明确。
+- [ ] 有启动、停止、重启、回滚脚本。
+- [ ] 有故障处理手册和联系人。
+- [ ] 有数据库备份和恢复手册。
+- [ ] 有变更记录和版本号。
+
+### 10.5 业务
+
+- [ ] 计量点清单、点位表、竣工图签字。
+- [ ] 报表口径确认：自然月/抄表月、总表/分表、单位。
+- [ ] 碳核算边界、因子版本、报告模板确认。
+- [ ] 用户培训完成。
+- [ ] 试运行 7 天，问题闭环。
+
+## 11. 故障排查
+
+| 现象 | 排查顺序 |
+| --- | --- |
+| 应用启动失败 | Java 版本 → 端口占用 → 数据库连接 → Redis 连接 → 日志第一个异常 |
+| 页面 502 | 后端进程 → 端口 → Nginx `proxy_pass` → 后端日志 |
+| 登录成功但接口 401 | Token 过期 → Redis 连接 → 网关/代理是否丢 Header |
+| 监控页无数据 | MQTT 是否收到 → Collector 是否写入 → Redis 是否有 key → 接口返回 |
+| 趋势图无数据 | 时间范围 → 时区 → 统计任务是否执行 → `energy_stat` 是否有记录 |
+| 统计值翻倍 | 任务重复执行 → 唯一键 → upsert 语句 |
+| 碳核算结果异常 | 活动数据单位 → 因子匹配 → 因子版本 → 边界 |
+| EMQX 连接数暴涨 | ClientId 冲突 → 网关重连风暴 → ACL 拒绝 |
+| TDengine 写入慢 | 磁盘 IO → 批量大小 → 标签基数 → 副本数 |
+| 磁盘满 | 日志 → 时序库保留 → 备份文件 → Docker 镜像 |
+| 时间不对 | 服务器时区 → JVM 时区 → 数据库时区 → NTP |
+
+## 12. 交付物清单
+
+一个能碳项目上线，至少交付这些：
+
+| 类别 | 交付物 |
+| --- | --- |
+| 设计 | 总体架构图、部署图、网络图、数据流图 |
+| 硬件 | 计量点清单、点位表、接线图、竣工图、仪表参数表 |
+| 软件 | 源码、数据库脚本、Docker Compose、Nginx 配置、构建说明 |
+| 测试 | 单表调试记录、联调记录、对账记录、压测报告 |
+| 碳 | 核算边界说明、因子清单、核算报告模板、核对记录 |
+| 运维 | 部署手册、备份恢复手册、故障处理手册、监控告警配置 |
+| 培训 | 用户手册、管理员手册、培训签到和录屏 |
+
+<Aside type="tip" title="最后一件事">
+  上线不是终点。能碳系统的价值在于持续运行和数据可信。建议上线后第一个月每周做一次数据对账，第二个月每两周一次，稳定后每月一次。对账记录本身就是碳核查最重要的证据链。
+</Aside>
+
+到这里，教程的主线就结束了。回到[教程导读](/nengtan/)可以按章节复查；如果只关心硬件，直接看[硬件详解](/nengtan/hardware/)。
