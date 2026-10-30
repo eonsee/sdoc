@@ -1,0 +1,1461 @@
+---
+title: 若依实现
+description: 在若依里落地能碳系统：工程改造、核心表结构、采集服务、统计任务、碳核算、权限和前端页面。
+sidebar:
+  order: 4
+---
+
+这一章把前面的设计落到代码。主线是 **RuoYi-Vue 单体 + 独立 Collector 采集服务**。如果你用 RuoYi-Cloud 或 RuoYi-Vue-Plus，目录和依赖会变，但表结构、采集流程、碳核算思路不变。
+
+## 1. 环境准备
+
+| 软件 | 版本 | 用途 |
+| --- | --- | --- |
+| JDK | 8 或 17 | 后端 |
+| Maven | 3.9+ | 构建 |
+| MySQL | 8.0+ | 业务库 |
+| Redis | 7.x | 缓存 |
+| Node | 20 LTS | 前端 |
+| Git | 最新 | 版本管理 |
+| TDengine | 3.3.x | 时序库 |
+| EMQX | 5.8.x | MQTT |
+| Docker | 26+ | 本地中间件 |
+
+<Steps>
+  <Step title="拉取若依">
+    ```bash
+    git clone https://gitee.com/y_project/RuoYi-Vue.git
+    git clone https://gitee.com/y_project/RuoYi-Vue3.git
+    ```
+  </Step>
+  <Step title="初始化数据库">
+    在 MySQL 里创建 `ry-vue` 库，执行若依 `sql` 目录下的 `ry_2025xxxx.sql` 和 `quartz.sql`。具体文件名以你拉取的版本为准。
+  </Step>
+  <Step title="启动 Redis 和 MySQL">
+    本地可以用 Docker：
+    ```bash
+    docker run -d --name ry-mysql -p 3306:3306 \
+      -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=ry-vue mysql:8.0
+    docker run -d --name ry-redis -p 6379:6379 redis:7.2
+    ```
+  </Step>
+  <Step title="修改配置并启动">
+    改 `ruoyi-admin/src/main/resources/application-druid.yml` 里的数据库连接，改 `application.yml` 里的 Redis 连接。启动 `RuoYiApplication`，浏览器打开前端，默认账号 `admin/admin123`。
+  </Step>
+</Steps>
+
+<Aside type="warning" title="上线前必须改默认密码">
+  若依默认账号和密码是公开的。上线前修改 `admin` 密码，删除或禁用演示账号，修改数据库、Redis、MQTT 的默认口令，并检查 `application.yml` 里是否还有开发环境的明文密码。
+</Aside>
+
+## 2. 工程改造
+
+### 2.1 新增业务模块
+
+在根 `pom.xml` 的 `<modules>` 里加：
+
+```xml
+<module>ruoyi-energy</module>
+```
+
+新建 `ruoyi-energy/pom.xml`：
+
+```xml
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>com.ruoyi</groupId>
+        <artifactId>ruoyi</artifactId>
+        <!-- 与根 pom 的 version 保持一致 -->
+        <version>3.8.9</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>ruoyi-energy</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-framework</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.taosdata.jdbc</groupId>
+            <artifactId>taos-jdbcdriver</artifactId>
+            <version>3.3.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>easyexcel</artifactId>
+            <version>3.3.4</version>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+在 `ruoyi-admin/pom.xml` 里依赖它：
+
+```xml
+<dependency>
+    <groupId>com.ruoyi</groupId>
+    <artifactId>ruoyi-energy</artifactId>
+</dependency>
+```
+
+### 2.2 包结构
+
+```text
+com.ruoyi.energy
+├── config
+│   ├── TdengineConfig.java
+│   ├── MqttConfig.java
+│   └── ThreadPoolConfig.java
+├── controller
+│   ├── EnergyMeterController.java
+│   ├── EnergyPointController.java
+│   ├── EnergyStatController.java
+│   └── CarbonAccountingController.java
+├── service
+│   ├── impl
+│   ├── collect
+│   ├── stat
+│   ├── carbon
+│   └── alarm
+├── mapper
+├── domain
+├── enums
+└── util
+```
+
+### 2.3 Mapper 扫描
+
+若依默认扫描 `com.ruoyi.**.mapper`，如果你的包在 `com.ruoyi.energy.mapper` 下，通常不用改。如果启动时报 Mapper 找不到，检查启动类上的 `@MapperScan` 或 `application.yml` 里的 `mybatis.typeAliasesPackage`、`mapperLocations`。
+
+```yaml title="application.yml（节选）"
+mybatis:
+  typeAliasesPackage: com.ruoyi.**.domain
+  mapperLocations: classpath*:mapper/**/*Mapper.xml
+```
+
+## 3. 数据库设计
+
+能碳系统的表可以分成五组：
+
+| 分组 | 表 | 说明 |
+| --- | --- | --- |
+| 基础数据 | `energy_media`、`energy_meter`、`energy_point`、`energy_gateway` | 介质、计量点、点位、网关 |
+| 采集数据 | TDengine `point_data` | 原始值、质量码 |
+| 统计数据 | `energy_stat` | 小时/日/月聚合 |
+| 碳管理 | `carbon_factor`、`carbon_accounting`、`carbon_emission` | 因子、核算任务、核算明细 |
+| 业务管理 | `energy_price`、`energy_quota`、`energy_alarm_rule`、`energy_alarm` | 单价、定额、报警 |
+
+下面给出核心表的建表语句。字段按若依习惯保留 `create_by`、`create_time`、`update_by`、`update_time`、`remark`，方便代码生成和审计。
+
+### 3.1 能源介质
+
+```sql title="energy_media.sql"
+CREATE TABLE energy_media (
+  media_id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '介质ID',
+  media_code          VARCHAR(32)  NOT NULL COMMENT '介质编码',
+  media_name          VARCHAR(64)  NOT NULL COMMENT '介质名称',
+  category            VARCHAR(16)  NOT NULL COMMENT '分类：electricity/water/gas/steam/air/heat',
+  unit                VARCHAR(16)  NOT NULL COMMENT '计量单位',
+  standard_coal_factor DECIMAL(18,6) DEFAULT NULL COMMENT '折标煤系数 kgce/单位',
+  default_carbon_factor DECIMAL(18,6) DEFAULT NULL COMMENT '默认碳排放因子',
+  sort_order          INT          DEFAULT 0 COMMENT '排序',
+  status              CHAR(1)      DEFAULT '0' COMMENT '状态（0正常 1停用）',
+  create_by           VARCHAR(64)  DEFAULT '',
+  create_time         DATETIME     DEFAULT NULL,
+  update_by           VARCHAR(64)  DEFAULT '',
+  update_time         DATETIME     DEFAULT NULL,
+  remark              VARCHAR(500) DEFAULT NULL,
+  PRIMARY KEY (media_id),
+  UNIQUE KEY uk_media_code (media_code)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='能源介质';
+```
+
+### 3.2 计量点
+
+```sql title="energy_meter.sql"
+CREATE TABLE energy_meter (
+  meter_id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '计量点ID',
+  meter_code          VARCHAR(64)  NOT NULL COMMENT '计量点编码',
+  meter_name          VARCHAR(128) NOT NULL COMMENT '计量点名称',
+  media_id            BIGINT       NOT NULL COMMENT '能源介质ID',
+  dept_id             BIGINT       DEFAULT NULL COMMENT '所属部门/车间',
+  parent_id           BIGINT       DEFAULT 0 COMMENT '上级计量点ID',
+  meter_level         TINYINT      DEFAULT 2 COMMENT '层级：1总表 2分表 3设备表',
+  location            VARCHAR(255) DEFAULT NULL COMMENT '安装位置',
+  brand               VARCHAR(64)  DEFAULT NULL COMMENT '品牌',
+  model               VARCHAR(64)  DEFAULT NULL COMMENT '型号',
+  serial_no           VARCHAR(64)  DEFAULT NULL COMMENT '出厂编号',
+  gateway_id          BIGINT       DEFAULT NULL COMMENT '所属网关ID',
+  protocol            VARCHAR(32)  DEFAULT NULL COMMENT '协议：MODBUS_RTU/DLT645/OPC_UA/MQTT',
+  comm_type           VARCHAR(32)  DEFAULT NULL COMMENT '通信方式：RS485/4-20mA/PULSE/ETHERNET',
+  slave_addr          INT          DEFAULT NULL COMMENT '从站地址',
+  baud_rate           INT          DEFAULT NULL COMMENT '波特率',
+  parity              VARCHAR(8)   DEFAULT 'N' COMMENT '校验位 N/E/O',
+  multiplier          DECIMAL(18,6) DEFAULT 1 COMMENT '倍率（CT/PT变比）',
+  multiplier_applied  CHAR(1)      DEFAULT '0' COMMENT '表内是否已乘倍率（0否 1是）',
+  install_date        DATE         DEFAULT NULL COMMENT '安装日期',
+  last_online_time    DATETIME     DEFAULT NULL COMMENT '最后在线时间',
+  status              CHAR(1)      DEFAULT '0' COMMENT '状态（0正常 1停用）',
+  create_by           VARCHAR(64)  DEFAULT '',
+  create_time         DATETIME     DEFAULT NULL,
+  update_by           VARCHAR(64)  DEFAULT '',
+  update_time         DATETIME     DEFAULT NULL,
+  remark              VARCHAR(500) DEFAULT NULL,
+  PRIMARY KEY (meter_id),
+  UNIQUE KEY uk_meter_code (meter_code),
+  KEY idx_media_dept (media_id, dept_id),
+  KEY idx_gateway (gateway_id)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='计量点';
+```
+
+### 3.3 点位
+
+```sql title="energy_point.sql"
+CREATE TABLE energy_point (
+  point_id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '点位ID',
+  point_code          VARCHAR(96)  NOT NULL COMMENT '点位编码',
+  point_name          VARCHAR(128) NOT NULL COMMENT '点位名称',
+  meter_id            BIGINT       NOT NULL COMMENT '计量点ID',
+  point_type          VARCHAR(16)  DEFAULT 'INSTANT' COMMENT '类型：INSTANT瞬时/CUMULATIVE累计/STATUS状态',
+  data_type           VARCHAR(16)  NOT NULL COMMENT '数据类型：UINT16/INT16/UINT32/INT32/FLOAT32/BCD',
+  function_code       INT          DEFAULT 3 COMMENT 'Modbus功能码',
+  register_addr       INT          NOT NULL COMMENT '寄存器地址（十进制存）',
+  register_count      INT          DEFAULT 1 COMMENT '寄存器数量',
+  byte_order          VARCHAR(8)   DEFAULT 'AB' COMMENT '字节序：AB/ABCD/CDAB/BADC/DCBA',
+  scale               DECIMAL(18,9) DEFAULT 1 COMMENT '缩放系数',
+  offset_value        DECIMAL(18,6) DEFAULT 0 COMMENT '偏移量',
+  unit                VARCHAR(16)  DEFAULT NULL COMMENT '工程单位',
+  period_sec          INT          DEFAULT 60 COMMENT '采集周期（秒）',
+  deadband            DECIMAL(18,6) DEFAULT NULL COMMENT '死区',
+  alarm_enabled       CHAR(1)      DEFAULT '0' COMMENT '是否报警（0否 1是）',
+  status              CHAR(1)      DEFAULT '0' COMMENT '状态（0正常 1停用）',
+  create_by           VARCHAR(64)  DEFAULT '',
+  create_time         DATETIME     DEFAULT NULL,
+  update_by           VARCHAR(64)  DEFAULT '',
+  update_time         DATETIME     DEFAULT NULL,
+  remark              VARCHAR(500) DEFAULT NULL,
+  PRIMARY KEY (point_id),
+  UNIQUE KEY uk_point_code (point_code),
+  KEY idx_meter (meter_id)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='采集点位';
+```
+
+### 3.4 统计结果
+
+```sql title="energy_stat.sql"
+CREATE TABLE energy_stat (
+  stat_id             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '统计ID',
+  stat_type           VARCHAR(8)   NOT NULL COMMENT 'HOUR/DAY/MONTH/YEAR',
+  stat_time           DATETIME     NOT NULL COMMENT '统计时间（周期起点）',
+  point_id            BIGINT       NOT NULL COMMENT '点位ID',
+  meter_id            BIGINT       NOT NULL COMMENT '计量点ID',
+  media_id            BIGINT       NOT NULL COMMENT '介质ID',
+  dept_id             BIGINT       DEFAULT NULL COMMENT '部门ID',
+  value               DECIMAL(20,6) NOT NULL COMMENT '统计值',
+  unit                VARCHAR(16)  DEFAULT NULL COMMENT '单位',
+  data_count          INT          DEFAULT 0 COMMENT '实际采集点数',
+  expected_count      INT          DEFAULT 0 COMMENT '应采集点数',
+  quality             TINYINT      DEFAULT 0 COMMENT '质量：0正常 1不完整 2异常',
+  create_time         DATETIME     DEFAULT NULL,
+  PRIMARY KEY (stat_id),
+  UNIQUE KEY uk_stat (stat_type, stat_time, point_id),
+  KEY idx_query (stat_type, stat_time, media_id, dept_id)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='能耗统计';
+```
+
+### 3.5 排放因子
+
+```sql title="carbon_factor.sql"
+CREATE TABLE carbon_factor (
+  factor_id           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '因子ID',
+  factor_code         VARCHAR(64)  NOT NULL COMMENT '因子编码',
+  factor_name         VARCHAR(128) NOT NULL COMMENT '因子名称',
+  media_id            BIGINT       DEFAULT NULL COMMENT '关联介质',
+  source_type         VARCHAR(32)  NOT NULL COMMENT '排放源类型：ELECTRICITY/FUEL/STEAM/REFRIGERANT',
+  scope               VARCHAR(8)   NOT NULL COMMENT '范围：SCOPE_1/SCOPE_2/SCOPE_3',
+  region              VARCHAR(32)  DEFAULT 'NATIONAL' COMMENT '适用地区',
+  factor_year         INT          NOT NULL COMMENT '适用年份',
+  factor_value        DECIMAL(18,9) NOT NULL COMMENT '因子值',
+  unit                VARCHAR(32)  NOT NULL COMMENT '单位',
+  source              VARCHAR(255) DEFAULT NULL COMMENT '来源文件/公告',
+  version             VARCHAR(32)  NOT NULL COMMENT '版本号',
+  effective_from      DATE         NOT NULL COMMENT '生效日期',
+  effective_to        DATE         DEFAULT NULL COMMENT '失效日期',
+  status              CHAR(1)      DEFAULT '0' COMMENT '状态（0启用 1停用）',
+  create_by           VARCHAR(64)  DEFAULT '',
+  create_time         DATETIME     DEFAULT NULL,
+  update_by           VARCHAR(64)  DEFAULT '',
+  update_time         DATETIME     DEFAULT NULL,
+  remark              VARCHAR(500) DEFAULT NULL,
+  PRIMARY KEY (factor_id),
+  UNIQUE KEY uk_factor (factor_code, version),
+  KEY idx_match (source_type, region, factor_year, status)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='碳排放因子库';
+```
+
+### 3.6 核算任务与明细
+
+```sql title="carbon_accounting.sql"
+CREATE TABLE carbon_accounting (
+  accounting_id       BIGINT       NOT NULL AUTO_INCREMENT COMMENT '核算ID',
+  accounting_no       VARCHAR(64)  NOT NULL COMMENT '核算编号',
+  accounting_name     VARCHAR(128) NOT NULL COMMENT '核算名称',
+  dept_id             BIGINT       DEFAULT NULL COMMENT '组织边界',
+  period_start        DATE         NOT NULL COMMENT '核算期间起',
+  period_end          DATE         NOT NULL COMMENT '核算期间止',
+  boundary_method     VARCHAR(32)  DEFAULT 'OPERATIONAL_CONTROL' COMMENT '合并方式',
+  standard            VARCHAR(64)  DEFAULT 'GB/T 32150' COMMENT '核算标准',
+  scope1              DECIMAL(20,6) DEFAULT 0 COMMENT '范围一排放',
+  scope2              DECIMAL(20,6) DEFAULT 0 COMMENT '范围二排放',
+  scope3              DECIMAL(20,6) DEFAULT 0 COMMENT '范围三排放',
+  total_emission      DECIMAL(20,6) DEFAULT 0 COMMENT '总排放 tCO2e',
+  carbon_intensity    DECIMAL(20,6) DEFAULT NULL COMMENT '碳强度',
+  intensity_unit      VARCHAR(32)  DEFAULT 'tCO2e/万元' COMMENT '碳强度单位',
+  status              VARCHAR(16)  DEFAULT 'DRAFT' COMMENT 'DRAFT/CALCULATING/REVIEWED/LOCKED',
+  calc_time           DATETIME     DEFAULT NULL COMMENT '计算时间',
+  lock_by             VARCHAR(64)  DEFAULT NULL COMMENT '锁定人',
+  lock_time           DATETIME     DEFAULT NULL COMMENT '锁定时间',
+  create_by           VARCHAR(64)  DEFAULT '',
+  create_time         DATETIME     DEFAULT NULL,
+  update_by           VARCHAR(64)  DEFAULT '',
+  update_time         DATETIME     DEFAULT NULL,
+  remark              VARCHAR(500) DEFAULT NULL,
+  PRIMARY KEY (accounting_id),
+  UNIQUE KEY uk_accounting_no (accounting_no),
+  KEY idx_period (period_start, period_end)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='碳核算任务';
+
+CREATE TABLE carbon_emission (
+  emission_id         BIGINT       NOT NULL AUTO_INCREMENT COMMENT '明细ID',
+  accounting_id       BIGINT       NOT NULL COMMENT '核算ID',
+  source_type         VARCHAR(32)  NOT NULL COMMENT '排放源类型',
+  scope               VARCHAR(8)   NOT NULL COMMENT '范围',
+  activity_value      DECIMAL(20,6) NOT NULL COMMENT '活动数据',
+  activity_unit       VARCHAR(32)  NOT NULL COMMENT '活动数据单位',
+  factor_id           BIGINT       DEFAULT NULL COMMENT '因子ID',
+  factor_value        DECIMAL(18,9) DEFAULT NULL COMMENT '因子快照',
+  factor_unit         VARCHAR(32)  DEFAULT NULL COMMENT '因子单位',
+  factor_version      VARCHAR(32)  DEFAULT NULL COMMENT '因子版本快照',
+  emission            DECIMAL(20,6) NOT NULL COMMENT '排放量 tCO2e',
+  data_source         VARCHAR(255) DEFAULT NULL COMMENT '数据来源说明',
+  create_time         DATETIME     DEFAULT NULL,
+  PRIMARY KEY (emission_id),
+  KEY idx_accounting (accounting_id)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='碳核算明细';
+```
+
+<Aside type="tip" title="先建表，再用代码生成">
+  把 `energy_media`、`energy_meter`、`energy_point`、`energy_gateway`、`energy_price`、`energy_quota` 这些标准 CRUD 表交给若依代码生成器，能省大量重复工作。碳核算和统计表结构特殊，建议手写 Service。
+</Aside>
+
+## 4. 用代码生成器做 CRUD
+
+<Steps>
+  <Step title="导入表">
+    启动若依，进入“系统工具 → 代码生成 → 导入”，勾选业务表。
+  </Step>
+  <Step title="配置生成信息">
+    包名填 `com.ruoyi.energy`，模块名填 `energy`，业务名填 `meter`、`point` 等。作者、菜单名称按项目填。
+  </Step>
+  <Step title="生成并解压">
+    下载生成的压缩包，把 `main/java`、`main/resources`、`vue` 下的文件分别放到 `ruoyi-energy` 和前端项目对应目录。
+  </Step>
+  <Step title="手工改造">
+    生成的是标准单表 CRUD。你需要补：联表查询介质/部门名称、参数校验、数据权限、导入导出模板、点位与计量点的一致性校验。
+  </Step>
+</Steps>
+
+生成后的 Controller 通常长这样，记得加权限注解：
+
+```java
+@RestController
+@RequestMapping("/energy/meter")
+public class EnergyMeterController extends BaseController {
+
+    @Autowired
+    private IEnergyMeterService meterService;
+
+    @PreAuthorize("@ss.hasPermi('energy:meter:list')")
+    @GetMapping("/list")
+    public TableDataInfo list(EnergyMeter meter) {
+        startPage();
+        List<EnergyMeter> list = meterService.selectMeterList(meter);
+        return getDataTable(list);
+    }
+
+    @PreAuthorize("@ss.hasPermi('energy:meter:query')")
+    @GetMapping("/{meterId}")
+    public AjaxResult getInfo(@PathVariable Long meterId) {
+        return success(meterService.selectMeterById(meterId));
+    }
+
+    @PreAuthorize("@ss.hasPermi('energy:meter:add')")
+    @Log(title = "计量点", businessType = BusinessType.INSERT)
+    @PostMapping
+    public AjaxResult add(@Validated @RequestBody EnergyMeter meter) {
+        return toAjax(meterService.insertMeter(meter));
+    }
+
+    @PreAuthorize("@ss.hasPermi('energy:meter:edit')")
+    @Log(title = "计量点", businessType = BusinessType.UPDATE)
+    @PutMapping
+    public AjaxResult edit(@Validated @RequestBody EnergyMeter meter) {
+        return toAjax(meterService.updateMeter(meter));
+    }
+
+    @PreAuthorize("@ss.hasPermi('energy:meter:remove')")
+    @Log(title = "计量点", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{meterIds}")
+    public AjaxResult remove(@PathVariable Long[] meterIds) {
+        return toAjax(meterService.deleteMeterByIds(meterIds));
+    }
+}
+```
+
+## 5. 采集服务
+
+### 5.1 为什么独立部署
+
+采集服务要长期运行、直接连现场网络、频繁重连，和 Web 应用的生命周期不同。独立部署后：
+
+- Web 应用重启不影响采集。
+- 采集服务可以部署在靠近网关的机器。
+- 只给采集服务开放时序库写权限和 MQTT 订阅权限。
+
+### 5.2 独立 Collector 工程
+
+```text
+collector/
+├── pom.xml
+└── src/main
+    ├── java/com/example/collector
+    │   ├── CollectorApplication.java
+    │   ├── mqtt/MqttIngestService.java
+    │   ├── modbus/ModbusPollingService.java
+    │   ├── store/TimeSeriesWriter.java
+    │   ├── store/LatestValueCache.java
+    │   ├── alarm/AlarmEvaluator.java
+    │   └── model/TelemetryMessage.java
+    └── resources/application.yml
+```
+
+`pom.xml` 关键依赖：
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.eclipse.paho</groupId>
+        <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+        <version>1.2.5</version>
+    </dependency>
+    <dependency>
+        <groupId>com.taosdata.jdbc</groupId>
+        <artifactId>taos-jdbcdriver</artifactId>
+        <version>3.3.0</version>
+    </dependency>
+    <dependency>
+        <groupId>com.intelligt.modbus</groupId>
+        <artifactId>jlibmodbus</artifactId>
+        <version>1.2.9.7</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+    </dependency>
+</dependencies>
+```
+
+### 5.3 配置
+
+```yaml title="application.yml"
+server:
+  port: 9090
+
+spring:
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    password:
+    database: 2
+
+mqtt:
+  broker: tcp://127.0.0.1:1883
+  client-id: collector-01
+  username: collector
+  password: change-me
+  topics:
+    - energy/+/+/telemetry
+    - energy/+/+/status
+  qos: 1
+
+tdengine:
+  url: jdbc:TAOS://127.0.0.1:6030/energy?charset=utf8
+  username: root
+  password: taosdata
+  batch-size: 500
+  flush-interval-ms: 1000
+```
+
+### 5.4 MQTT 接入
+
+```java
+@Service
+public class MqttIngestService implements MqttCallbackExtended {
+
+    private static final Logger log = LoggerFactory.getLogger(MqttIngestService.class);
+
+    @Value("${mqtt.broker}")
+    private String broker;
+    @Value("${mqtt.client-id}")
+    private String clientId;
+    @Value("${mqtt.username}")
+    private String username;
+    @Value("${mqtt.password}")
+    private String password;
+    @Value("${mqtt.qos:1}")
+    private int qos;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final TimeSeriesWriter writer;
+    private final LatestValueCache cache;
+    private final AlarmEvaluator alarmEvaluator;
+
+    private MqttClient client;
+
+    public MqttIngestService(TimeSeriesWriter writer,
+                             LatestValueCache cache,
+                             AlarmEvaluator alarmEvaluator) {
+        this.writer = writer;
+        this.cache = cache;
+        this.alarmEvaluator = alarmEvaluator;
+    }
+
+    @PostConstruct
+    public void start() throws MqttException {
+        client = new MqttClient(broker, clientId, new MemoryPersistence());
+        MqttConnectOptions options = new MqttConnectOptions();
+        options.setUserName(username);
+        options.setPassword(password.toCharArray());
+        options.setAutomaticReconnect(true);
+        options.setCleanSession(false);
+        options.setKeepAliveInterval(30);
+        client.setCallback(this);
+        client.connect(options);
+        client.subscribe("energy/+/+/telemetry", qos);
+        client.subscribe("energy/+/+/status", qos);
+        log.info("MQTT connected: {}", broker);
+    }
+
+    @Override
+    public void connectComplete(boolean reconnect, String serverURI) {
+        try {
+            client.subscribe("energy/+/+/telemetry", qos);
+            client.subscribe("energy/+/+/status", qos);
+            log.info("MQTT reconnected, resubscribed: {}", serverURI);
+        } catch (MqttException e) {
+            log.error("resubscribe failed", e);
+        }
+    }
+
+    @Override
+    public void messageArrived(String topic, MqttMessage message) {
+        try {
+            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+            if (topic.endsWith("/status")) {
+                handleStatus(topic, payload);
+            } else {
+                handleTelemetry(topic, payload);
+            }
+        } catch (Exception e) {
+            log.error("handle message failed, topic={}", topic, e);
+        }
+    }
+
+    private void handleTelemetry(String topic, String payload) throws Exception {
+        JsonNode root = objectMapper.readTree(payload);
+        String gatewayId = root.path("gatewayId").asText();
+        String meterCode = root.path("meterCode").asText();
+        String energyType = root.path("energyType").asText("");
+        long ts = root.path("ts").asLong(System.currentTimeMillis());
+        int quality = root.path("quality").asInt(0);
+        JsonNode points = root.path("points");
+
+        Iterator<Map.Entry<String, JsonNode>> it = points.fields();
+        while (it.hasNext()) {
+            Map.Entry<String, JsonNode> entry = it.next();
+            String pointCode = meterCode + "." + entry.getKey();
+            double value = entry.getValue().asDouble();
+            writer.append(pointCode, meterCode, energyType, ts, value, quality);
+            cache.update(pointCode, value, ts, quality);
+            alarmEvaluator.evaluate(pointCode, value, ts);
+        }
+    }
+
+    private void handleStatus(String topic, String payload) {
+        // 解析网关心跳，更新在线状态和最后心跳时间
+        log.debug("gateway status: {} {}", topic, payload);
+    }
+
+    @Override
+    public void connectionLost(Throwable cause) {
+        log.error("MQTT connection lost", cause);
+    }
+
+    @Override
+    public void deliveryComplete(IMqttDeliveryToken token) {
+        // 采集服务只订阅，不发布，忽略
+    }
+}
+```
+
+<Aside type="note" title="ClientId 不能重复">
+  EMQX 里同一个 ClientId 的后连接会踢掉前连接。多个采集实例要用不同 ClientId，或者用 `clientId + 随机后缀`。生产环境建议用 `collector-{hostname}`。
+</Aside>
+
+<Aside type="tip" title="生产环境的两处改造">
+  - 把 `MemoryPersistence` 换成 `MqttDefaultFilePersistence`，否则进程重启后 QoS 1 的未确认消息会丢。
+  - 在启动类加 `@EnableScheduling`，`@Scheduled` 的批量写和 Modbus 轮询才会生效。
+</Aside>
+
+### 5.5 批量写时序库
+
+TDengine 的数据源要单独建，**不要**让 `DataSource` 注入到若依的 MySQL 主数据源：
+
+```java
+@Configuration
+public class TdengineConfig {
+
+    @Bean(name = "tdengineDataSource")
+    @ConfigurationProperties(prefix = "tdengine.datasource")
+    public DataSource tdengineDataSource() {
+        return DataSourceBuilder.create().build();
+    }
+}
+```
+
+```yaml title="application.yml（TDengine 数据源）"
+tdengine:
+  datasource:
+    driver-class-name: com.taosdata.jdbc.TSDBDriver
+    url: jdbc:TAOS://127.0.0.1:6030/energy?charset=utf8
+    username: root
+    password: taosdata
+```
+
+写入组件用 `@Qualifier` 指定数据源：
+
+```java
+@Component
+public class TimeSeriesWriter {
+
+    private static final Logger log = LoggerFactory.getLogger(TimeSeriesWriter.class);
+
+    private final BlockingQueue<PointSample> queue = new LinkedBlockingQueue<>(100000);
+    private final DataSource dataSource;
+    private final int batchSize;
+    private final long flushIntervalMs;
+
+    public TimeSeriesWriter(@Qualifier("tdengineDataSource") DataSource dataSource,
+                            @Value("${tdengine.batch-size:500}") int batchSize,
+                            @Value("${tdengine.flush-interval-ms:1000}") long flushIntervalMs) {
+        this.dataSource = dataSource;
+        this.batchSize = batchSize;
+        this.flushIntervalMs = flushIntervalMs;
+    }
+
+    public void append(String pointCode, String meterCode, String energyType,
+                       long ts, double value, int quality) {
+        boolean offered = queue.offer(
+                new PointSample(pointCode, meterCode, energyType, ts, value, quality));
+        if (!offered) {
+            log.warn("collector queue full, dropping sample: {}", pointCode);
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${tdengine.flush-interval-ms:1000}")
+    public void flush() {
+        List<PointSample> batch = new ArrayList<>(batchSize);
+        queue.drainTo(batch, batchSize);
+        if (batch.isEmpty()) {
+            return;
+        }
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try (Statement stmt = conn.createStatement()) {
+                for (PointSample s : batch) {
+                    stmt.addBatch(buildInsertSql(s));
+                }
+                stmt.executeBatch();
+                conn.commit();
+            }
+        } catch (Exception e) {
+            log.error("flush to TDengine failed, size={}", batch.size(), e);
+            // 失败时放回队列，等待下一次重试（生产环境要做幂等和限流）
+            queue.addAll(batch);
+        }
+    }
+
+    private String buildInsertSql(PointSample s) {
+        String table = "p_" + Math.abs(s.getPointCode().hashCode());
+        String sql = "INSERT INTO energy." + table
+                + " USING energy.point_data TAGS ('" + esc(s.getPointCode()) + "','"
+                + esc(s.getMeterCode()) + "','" + esc(s.getEnergyType()) + "',0)"
+                + " VALUES (" + s.getTs() + "," + s.getValue() + "," + s.getQuality() + ")";
+        return sql;
+    }
+
+    private String esc(String value) {
+        return value == null ? "" : value.replace("'", "''");
+    }
+}
+```
+
+<Aside type="danger" title="示例 SQL 只用于教学">
+  上面的拼接 SQL 必须做标识符和字符串转义。生产环境应使用参数化写入、固定子表映射、批量接口，并对 `pointCode` 做白名单校验。直接把外部 MQTT 内容拼进 SQL 是严重的安全漏洞。
+</Aside>
+
+### 5.6 最新值缓存
+
+```java
+@Component
+public class LatestValueCache {
+
+    private final StringRedisTemplate redisTemplate;
+
+    public LatestValueCache(StringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+
+    public void update(String pointCode, double value, long ts, int quality) {
+        String key = "energy:latest:" + pointCode;
+        Map<String, String> map = new HashMap<>();
+        map.put("value", String.valueOf(value));
+        map.put("ts", String.valueOf(ts));
+        map.put("quality", String.valueOf(quality));
+        redisTemplate.opsForHash().putAll(key, map);
+        redisTemplate.expire(key, 10, TimeUnit.MINUTES);
+    }
+}
+```
+
+监控页优先读 Redis；miss 时再查 TDengine 的最后一条记录。
+
+### 5.7 Modbus 轮询
+
+如果网关只做透明传输，采集服务也可以直接轮询 Modbus TCP：
+
+```java
+@Service
+public class ModbusPollingService {
+
+    private static final Logger log = LoggerFactory.getLogger(ModbusPollingService.class);
+
+    @Scheduled(fixedDelay = 60000)
+    public void poll() {
+        // 实际项目从数据库加载启用的网关和点位，这里用示例参数
+        ModbusMaster master = null;
+        try {
+            master = ModbusMasterFactory.createModbusMasterTCP("192.168.10.11", 502);
+            master.setResponseTimeout(3000);
+            master.connect();
+
+            // 从站地址 3，起始寄存器 0，读 10 个寄存器
+            ReadHoldingRegistersRequest request =
+                    new ReadHoldingRegistersRequest(3, 0, 10);
+            ReadHoldingRegistersResponse response =
+                    (ReadHoldingRegistersResponse) master.processRequest(request);
+
+            int[] regs = response.getRegisters();
+            double voltageA = regs[0] * 0.1;
+            long energyRaw = ((long) regs[8] << 16) | (regs[9] & 0xFFFFL);
+            double energy = energyRaw * 0.01;
+
+            log.info("UA={}V, EP={}kWh", voltageA, energy);
+        } catch (Exception e) {
+            log.error("modbus poll failed", e);
+        } finally {
+            if (master != null) {
+                try {
+                    master.disconnect();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+}
+```
+
+<Aside type="caution" title="不要每分钟新建连接">
+  示例为了简洁，每次轮询都建连接。生产环境要复用连接、做超时和重连、按网关串行轮询，避免把仪表打挂。一个网关下的表要排队读，不要并发轰。
+</Aside>
+
+### 5.8 数据解析工具
+
+```java
+public final class ModbusValueUtil {
+
+    private ModbusValueUtil() {
+    }
+
+    public static long toUInt32(int high, int low) {
+        return ((long) high << 16) | (low & 0xFFFFL);
+    }
+
+    public static int toInt16(int raw) {
+        return (short) raw;
+    }
+
+    public static float toFloatABCD(int r0, int r1) {
+        int bits = (r0 << 16) | (r1 & 0xFFFF);
+        return Float.intBitsToFloat(bits);
+    }
+
+    public static float toFloatCDAB(int r0, int r1) {
+        return toFloatABCD(r1, r0);
+    }
+
+    public static BigDecimal scale(long raw, BigDecimal scale, BigDecimal offset) {
+        return BigDecimal.valueOf(raw)
+                .multiply(scale)
+                .add(offset);
+    }
+}
+```
+
+## 6. 统计任务
+
+统计任务放在若依的 Quartz 里，或者放在 Collector 里都可以。建议：
+
+- **小时/日聚合**放若依，方便在管理界面看执行记录。
+- **秒级/分钟级实时判断**放 Collector，低延迟。
+
+### 6.1 任务类
+
+```java
+@Component("energyStatTask")
+public class EnergyStatTask {
+
+    @Autowired
+    private IEnergyStatService statService;
+
+    /**
+     * 聚合指定小时，参数格式 yyyy-MM-dd HH
+     * 例如：energyStatTask.hour('2026-10-01 10')
+     */
+    public void hour(String hour) {
+        statService.aggregateHour(hour);
+    }
+
+    public void day(String day) {
+        statService.aggregateDay(day);
+    }
+
+    public void month(String month) {
+        statService.aggregateMonth(month);
+    }
+}
+```
+
+在若依“定时任务”里新增：
+
+| 字段 | 值 |
+| --- | --- |
+| 任务名称 | 能耗小时聚合 |
+| 调用目标字符串 | `energyStatTask.hour('2026-10-01 10')` |
+| cron 表达式 | `0 5 * * * ?` |
+| 执行策略 | 立即执行 |
+| 是否并发 | 禁止 |
+
+### 6.2 聚合逻辑
+
+累计量（电量、水量、气量）取周期内首尾差；瞬时量（功率、流量、温度）取平均/最大/最小。
+
+```java
+@Service
+public class EnergyStatServiceImpl implements IEnergyStatService {
+
+    @Autowired
+    private EnergyPointMapper pointMapper;
+    @Autowired
+    private TimeSeriesQueryDao timeSeriesQueryDao;
+    @Autowired
+    private EnergyStatMapper statMapper;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void aggregateHour(String hour) {
+        LocalDateTime start = LocalDateTime.parse(hour + ":00:00",
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        LocalDateTime end = start.plusHours(1);
+
+        // selectEnabledPoints 联表 energy_meter，带出 mediaId、deptId
+        List<EnergyPoint> points = pointMapper.selectEnabledPoints();
+        for (EnergyPoint point : points) {
+            TimeSeriesSummary summary = timeSeriesQueryDao.summarize(
+                    point.getPointCode(), start, end);
+
+            BigDecimal value;
+            if ("CUMULATIVE".equals(point.getPointType())) {
+                value = summary.getLastValue().subtract(summary.getFirstValue());
+            } else {
+                value = summary.getAvgValue();
+            }
+
+            EnergyStat stat = new EnergyStat();
+            stat.setStatType("HOUR");
+            stat.setStatTime(Timestamp.valueOf(start));
+            stat.setPointId(point.getPointId());
+            stat.setMeterId(point.getMeterId());
+            stat.setMediaId(point.getMediaId());
+            stat.setDeptId(point.getDeptId());
+            stat.setValue(value);
+            stat.setUnit(point.getUnit());
+            stat.setDataCount(summary.getCount());
+            stat.setExpectedCount(60 * 60 / Math.max(point.getPeriodSec(), 1));
+            stat.setQuality(summary.getCount() >= stat.getExpectedCount() * 0.98 ? 0 : 1);
+            statMapper.upsert(stat);
+        }
+    }
+}
+```
+
+`upsert` 用唯一键 `uk_stat` 做幂等：
+
+```sql
+INSERT INTO energy_stat
+  (stat_type, stat_time, point_id, meter_id, media_id, dept_id,
+   value, unit, data_count, expected_count, quality, create_time)
+VALUES
+  (#{statType}, #{statTime}, #{pointId}, #{meterId}, #{mediaId}, #{deptId},
+   #{value}, #{unit}, #{dataCount}, #{expectedCount}, #{quality}, NOW())
+ON DUPLICATE KEY UPDATE
+  value = VALUES(value),
+  data_count = VALUES(data_count),
+  expected_count = VALUES(expected_count),
+  quality = VALUES(quality);
+```
+
+### 6.3 跨零点与补数
+
+- 日统计按 `00:00:00` 到次日 `00:00:00`，不要用 `23:59:59`，否则会漏最后一秒。
+- 累计量跨零点：取前一天最后一条和后一天第一条的差值，或直接用日末累计值减日初累计值。
+- 缺数：先用前后值插值，标记质量码 1；无法插值的标记 2，报表里单独说明。
+- 补跑：统计任务要支持传入日期重跑，且结果幂等。
+
+## 7. 碳核算服务
+
+### 7.1 计算器接口
+
+```java
+public interface EmissionCalculator {
+    String sourceType();
+    BigDecimal calculate(EmissionContext context);
+}
+```
+
+```java
+@Component
+public class ElectricityCalculator implements EmissionCalculator {
+
+    @Override
+    public String sourceType() {
+        return "ELECTRICITY";
+    }
+
+    @Override
+    public BigDecimal calculate(EmissionContext context) {
+        return context.getActivity()
+                .multiply(context.getFactorValue())
+                .setScale(6, RoundingMode.HALF_UP);
+    }
+}
+```
+
+```java
+@Component
+public class FuelCalculator implements EmissionCalculator {
+
+    @Override
+    public String sourceType() {
+        return "FUEL";
+    }
+
+    @Override
+    public BigDecimal calculate(EmissionContext context) {
+        // 活动数据 = 消耗量 × 低位热值 × 含碳量 × 氧化率 × 44/12
+        // 实际项目把这些参数做成因子配置，不要写死
+        return context.getActivity()
+                .multiply(context.getNcv())
+                .multiply(context.getCarbonContent())
+                .multiply(context.getOxidationRate())
+                .multiply(new BigDecimal("3.666666667"))
+                .divide(new BigDecimal("1000"), 6, RoundingMode.HALF_UP);
+    }
+}
+```
+
+### 7.2 核算服务
+
+```java
+@Service
+public class CarbonAccountingServiceImpl implements ICarbonAccountingService {
+
+    @Autowired
+    private CarbonAccountingMapper accountingMapper;
+    @Autowired
+    private CarbonEmissionMapper emissionMapper;
+    @Autowired
+    private CarbonFactorMapper factorMapper;
+    @Autowired
+    private EnergyStatMapper statMapper;
+
+    private final Map<String, EmissionCalculator> calculatorMap;
+
+    public CarbonAccountingServiceImpl(List<EmissionCalculator> calculators) {
+        this.calculatorMap = calculators.stream()
+                .collect(Collectors.toMap(EmissionCalculator::sourceType, Function.identity()));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void calculate(Long accountingId) {
+        CarbonAccounting accounting = accountingMapper.selectById(accountingId);
+        if (accounting == null) {
+            throw new ServiceException("核算任务不存在");
+        }
+        if ("LOCKED".equals(accounting.getStatus())) {
+            throw new ServiceException("已锁定的核算任务不能重算");
+        }
+
+        List<CarbonEmission> items = emissionMapper.selectByAccountingId(accountingId);
+        BigDecimal scope1 = BigDecimal.ZERO;
+        BigDecimal scope2 = BigDecimal.ZERO;
+        BigDecimal scope3 = BigDecimal.ZERO;
+
+        for (CarbonEmission item : items) {
+            CarbonFactor factor = factorMapper.selectEffective(
+                    item.getSourceType(),
+                    "NATIONAL",
+                    accounting.getPeriodEnd());
+            if (factor == null) {
+                throw new ServiceException("未找到有效排放因子：" + item.getSourceType());
+            }
+
+            EmissionContext context = new EmissionContext();
+            context.setActivity(item.getActivityValue());
+            context.setFactorValue(factor.getFactorValue());
+            context.setSourceType(item.getSourceType());
+
+            EmissionCalculator calculator = calculatorMap.get(item.getSourceType());
+            if (calculator == null) {
+                throw new ServiceException("不支持的排放源类型：" + item.getSourceType());
+            }
+            BigDecimal emission = calculator.calculate(context);
+
+            item.setFactorId(factor.getFactorId());
+            item.setFactorValue(factor.getFactorValue());
+            item.setFactorUnit(factor.getUnit());
+            item.setFactorVersion(factor.getVersion());
+            item.setEmission(emission);
+            emissionMapper.updateById(item);
+
+            if ("SCOPE_1".equals(item.getScope())) {
+                scope1 = scope1.add(emission);
+            } else if ("SCOPE_2".equals(item.getScope())) {
+                scope2 = scope2.add(emission);
+            } else {
+                scope3 = scope3.add(emission);
+            }
+        }
+
+        accounting.setScope1(scope1);
+        accounting.setScope2(scope2);
+        accounting.setScope3(scope3);
+        accounting.setTotalEmission(scope1.add(scope2).add(scope3));
+        accounting.setStatus("REVIEWED");
+        accounting.setCalcTime(new Date());
+        accountingMapper.updateById(accounting);
+    }
+}
+```
+
+<Aside type="warning" title="核算结果要保存快照">
+  上面把因子值、因子版本写进了 `carbon_emission`，这是最低要求。更严谨的做法是把活动数据、计算公式、数据来源、操作人、时间戳都存成 JSON 快照，锁定后不可变。否则因子升级或统计重跑后，历史报告无法复现。
+</Aside>
+
+### 7.3 活动数据从哪来
+
+| 排放源 | 活动数据 | 来源 |
+| --- | --- | --- |
+| 外购电 | kWh | `energy_stat` 月累计，介质 electricity |
+| 天然气 | Nm³ | `energy_stat` 月累计，介质 gas |
+| 蒸汽 | GJ/t | 流量计累计 + 焓值换算 |
+| 制冷剂 | kg | 手工台账/采购记录 |
+| 车辆燃油 | L | 加油卡/台账 |
+
+建议做一个“活动数据汇总”中间表或视图，把不同来源统一成 `source_type + activity_value + unit`，再喂给核算引擎。不要让核算服务直接查十几张业务表。
+
+## 8. 报警
+
+### 8.1 规则表
+
+```sql
+CREATE TABLE energy_alarm_rule (
+  rule_id        BIGINT NOT NULL AUTO_INCREMENT,
+  rule_name      VARCHAR(128) NOT NULL,
+  point_id       BIGINT DEFAULT NULL,
+  rule_type      VARCHAR(16) NOT NULL COMMENT 'THRESHOLD/RATE/OFFLINE/BUSINESS',
+  operator       VARCHAR(8) DEFAULT '>' COMMENT '> >= < <= =',
+  threshold      DECIMAL(18,6) DEFAULT NULL,
+  duration_sec   INT DEFAULT 0 COMMENT '持续多久才报警',
+  alarm_level    VARCHAR(8) DEFAULT 'WARN' COMMENT 'INFO/WARN/CRITICAL',
+  notify_channel VARCHAR(64) DEFAULT NULL COMMENT 'SMS/EMAIL/WECHAT',
+  status         CHAR(1) DEFAULT '0',
+  create_time    DATETIME DEFAULT NULL,
+  PRIMARY KEY (rule_id),
+  KEY idx_point (point_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='报警规则';
+```
+
+### 8.2 报警去重
+
+```java
+public void raise(String pointCode, BigDecimal value, String level) {
+    String key = "energy:alarm:active:" + pointCode;
+    Boolean first = redisTemplate.opsForValue()
+            .setIfAbsent(key, value.toPlainString(), Duration.ofMinutes(30));
+    if (Boolean.TRUE.equals(first)) {
+        // 第一次触发，写报警表、发通知
+        alarmMapper.insert(...);
+    } else {
+        // 已有活动报警，只更新最后触发时间，不重复通知
+        alarmMapper.updateLastTime(pointCode, new Date());
+    }
+}
+```
+
+恢复时删除 Redis key，并把报警状态改为“已恢复”。确认和关闭由人工操作，保留操作日志。
+
+## 9. 前端页面
+
+### 9.1 API 封装
+
+```javascript title="src/api/energy/meter.js"
+import request from '@/utils/request'
+
+export function listMeter(query) {
+  return request({
+    url: '/energy/meter/list',
+    method: 'get',
+    params: query
+  })
+}
+
+export function getMeter(meterId) {
+  return request({
+    url: '/energy/meter/' + meterId,
+    method: 'get'
+  })
+}
+
+export function addMeter(data) {
+  return request({
+    url: '/energy/meter',
+    method: 'post',
+    data: data
+  })
+}
+```
+
+### 9.2 页面骨架
+
+```vue title="src/views/energy/meter/index.vue"
+<template>
+  <div class="app-container">
+    <el-form :model="queryParams" ref="queryRef" :inline="true">
+      <el-form-item label="计量点名称" prop="meterName">
+        <el-input v-model="queryParams.meterName" placeholder="请输入" clearable />
+      </el-form-item>
+      <el-form-item label="能源介质" prop="mediaId">
+        <el-select v-model="queryParams.mediaId" placeholder="全部" clearable>
+          <el-option
+            v-for="item in mediaOptions"
+            :key="item.mediaId"
+            :label="item.mediaName"
+            :value="item.mediaId"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
+        <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+      </el-form-item>
+    </el-form>
+
+    <el-table v-loading="loading" :data="meterList">
+      <el-table-column label="编码" prop="meterCode" width="180" />
+      <el-table-column label="名称" prop="meterName" />
+      <el-table-column label="介质" prop="mediaName" width="100" />
+      <el-table-column label="层级" prop="meterLevel" width="80" />
+      <el-table-column label="状态" prop="status" width="80">
+        <template #default="scope">
+          <el-tag :type="scope.row.status === '0' ? 'success' : 'info'">
+            {{ scope.row.status === '0' ? '正常' : '停用' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <pagination
+      v-show="total > 0"
+      :total="total"
+      v-model:page="queryParams.pageNum"
+      v-model:limit="queryParams.pageSize"
+      @pagination="getList"
+    />
+  </div>
+</template>
+
+<script setup name="Meter">
+import { ref, reactive, onMounted } from 'vue'
+import { listMeter } from '@/api/energy/meter'
+
+const loading = ref(false)
+const meterList = ref([])
+const total = ref(0)
+const mediaOptions = ref([])
+
+const queryParams = reactive({
+  pageNum: 1,
+  pageSize: 10,
+  meterName: undefined,
+  mediaId: undefined
+})
+
+function getList() {
+  loading.value = true
+  listMeter(queryParams).then(res => {
+    meterList.value = res.rows
+    total.value = res.total
+  }).finally(() => {
+    loading.value = false
+  })
+}
+
+function handleQuery() {
+  queryParams.pageNum = 1
+  getList()
+}
+
+function resetQuery() {
+  queryParams.meterName = undefined
+  queryParams.mediaId = undefined
+  handleQuery()
+}
+
+onMounted(() => {
+  getList()
+})
+</script>
+```
+
+### 9.3 ECharts 趋势图
+
+```vue title="src/views/energy/monitor/PointTrend.vue"
+<template>
+  <div ref="chartRef" style="width: 100%; height: 360px"></div>
+</template>
+
+<script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import * as echarts from 'echarts'
+
+const chartRef = ref(null)
+let chart = null
+
+function render(data) {
+  chart = echarts.init(chartRef.value)
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: data.times },
+    yAxis: { type: 'value', name: 'kWh' },
+    series: [{
+      name: '电量',
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      areaStyle: { opacity: 0.12 },
+      data: data.values
+    }]
+  })
+}
+
+function handleResize() {
+  chart && chart.resize()
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+  // 实际项目调用接口获取数据后 render(data)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  chart && chart.dispose()
+})
+</script>
+```
+
+<Aside type="tip" title="图表数据量">
+  趋势图一次返回超过 2,000 个点，浏览器会明显卡顿。后端按时间范围自动降采样：7 天内返回原始/小时值，超过 30 天返回日值，超过 1 年返回月值。
+</Aside>
+
+## 10. 菜单与权限 SQL
+
+在若依“系统管理 → 菜单管理”里手工加也可以。用 SQL 更方便批量初始化，注意 `menu_id` 用自增，下面的 `@parentId` 依赖 `LAST_INSERT_ID()`：
+
+```sql
+-- 一级菜单：能源管理
+INSERT INTO sys_menu
+(menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+ menu_type, visible, status, perms, icon, create_by, create_time, remark)
+VALUES
+('能源管理', 0, 5, 'energy', NULL, 1, 0, 'M', '0', '0', '', 'energy', 'admin', SYSDATE(), '能源管理目录');
+SET @energyId = LAST_INSERT_ID();
+
+-- 二级菜单：计量点
+INSERT INTO sys_menu
+(menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+ menu_type, visible, status, perms, icon, create_by, create_time, remark)
+VALUES
+('计量点', @energyId, 1, 'meter', 'energy/meter/index', 1, 0, 'C', '0', '0', 'energy:meter:list', 'meter', 'admin', SYSDATE(), '计量点菜单');
+SET @meterId = LAST_INSERT_ID();
+
+-- 按钮权限
+INSERT INTO sys_menu
+(menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+ menu_type, visible, status, perms, icon, create_by, create_time, remark)
+VALUES
+('计量点查询', @meterId, 1, '', NULL, 1, 0, 'F', '0', '0', 'energy:meter:query', '#', 'admin', SYSDATE(), ''),
+('计量点新增', @meterId, 2, '', NULL, 1, 0, 'F', '0', '0', 'energy:meter:add', '#', 'admin', SYSDATE(), ''),
+('计量点修改', @meterId, 3, '', NULL, 1, 0, 'F', '0', '0', 'energy:meter:edit', '#', 'admin', SYSDATE(), ''),
+('计量点删除', @meterId, 4, '', NULL, 1, 0, 'F', '0', '0', 'energy:meter:remove', '#', 'admin', SYSDATE(), ''),
+('计量点导出', @meterId, 5, '', NULL, 1, 0, 'F', '0', '0', 'energy:meter:export', '#', 'admin', SYSDATE(), '');
+```
+
+## 11. 联调与测试
+
+### 11.1 没有硬件时怎么开发
+
+| 工具 | 用途 |
+| --- | --- |
+| Modbus Slave / ModbusPal | 模拟 Modbus TCP/RTU 从站，造寄存器数据 |
+| MQTTX | 模拟网关发布 telemetry 消息 |
+| EMQX Dashboard | 看连接、订阅、消息速率 |
+| TDengine CLI | 查原始数据、验证聚合 |
+| Postman | 调若依接口 |
+| JMeter | 压测采集写入和查询接口 |
+
+用 MQTTX 发一条测试消息：
+
+```json
+{
+  "gatewayId": "GW-TEST-01",
+  "meterCode": "SH01-C01-ELE-001",
+  "energyType": "electricity",
+  "ts": 1760000000000,
+  "quality": 0,
+  "points": {
+    "UA": 220.1,
+    "P": 123.4,
+    "EP": 45678.9
+  }
+}
+```
+
+Topic：
+
+```text
+energy/SH01/GW-TEST-01/telemetry
+```
+
+### 11.2 联调顺序
+
+<Steps>
+  <Step title="先通 MQTT">
+    MQTTX 能连上 EMQX，Collector 能收到消息并打日志。
+  </Step>
+  <Step title="再通时序库">
+    Collector 能把一条数据写进 TDengine，CLI 能查到。
+  </Step>
+  <Step title="再通 Redis">
+    监控页能读到最新值，TTL 正常。
+  </Step>
+  <Step title="再通业务库">
+    计量点、点位配置能从若依页面维护。
+  </Step>
+  <Step title="再通统计">
+    跑一次小时聚合，`energy_stat` 有结果，重复跑不翻倍。
+  </Step>
+  <Step title="最后通碳核算">
+    用一条电费数据手工算一遍，和系统结果对比。
+  </Step>
+</Steps>
+
+### 11.3 常见问题
+
+| 问题 | 原因 | 处理 |
+| --- | --- | --- |
+| 启动报 Mapper 找不到 | 包路径不在扫描范围 | 检查 `@MapperScan` 和 `mapperLocations` |
+| 代码生成页面 404 | 前端路由/菜单没配 | 检查菜单 `component` 路径 |
+| TDengine 连接超时 | 端口 6030 未开放/驱动版本不匹配 | 用 CLI 先验证，再查 JDBC URL |
+| MQTT 一直重连 | ClientId 冲突/账号 ACL | 换 ClientId，查 EMQX 日志 |
+| 数据重复 | QoS 1 重发/补传没去重 | 用 `gatewayId + seq` 或时间戳去重 |
+| 统计值翻倍 | 任务重复执行/唯一键失效 | 检查 `uk_stat` 和 upsert |
+| 碳核算结果与 Excel 不一致 | 单位/因子/口径不同 | 逐步对比活动数据和因子 |
+| 页面图表空白 | 容器高度为 0/数据为空 | 给容器固定高度，检查接口返回 |
+
+## 12. 开发顺序建议
+
+| 顺序 | 任务 | 产出 |
+| --- | --- | --- |
+| 1 | 若依跑通、建库、建模块 | 能登录、能访问业务菜单 |
+| 2 | 建介质、计量点、点位表 | 基础数据可维护 |
+| 3 | MQTTX → Collector → TDengine | 一条模拟数据入库 |
+| 4 | Redis 最新值 + 监控页 | 页面能看到实时值 |
+| 5 | 小时/日统计 | 趋势图有数据 |
+| 6 | 报警规则 + 报警页 | 超限能触发 |
+| 7 | 碳因子 + 核算任务 | 能算出总排放 |
+| 8 | 报表导出 + 权限 | 能交付试用 |
+| 9 | 接真实仪表 | 数据与现场一致 |
+
+<Aside type="tip" title="先做一条闭环">
+  不要同时接电、水、气、汽。先把“一块电表 → 网关 → MQTT → 时序库 → 页面 → 日报 → 碳核算”这条闭环跑通，再复制到其他介质。第一条闭环会暴露 80% 的设计问题。
+</Aside>
+
+下一章讲部署：怎么把若依、Collector、MySQL、Redis、TDengine、EMQX 编排到一台或几台服务器上，以及上线前要检查什么。

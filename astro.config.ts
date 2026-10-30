@@ -21,6 +21,9 @@ const nimbusConfig = defineNimbusConfig({
   // The home page leads the sidebar; every other page joins it automatically.
   sidebar: {
     items: ["index", { autogenerate: { collection: "docs" } }],
+    // The tutorial group's landing page reads as "教程导读" in the rail.
+    indexDisplay: "overview-leaf",
+    overviewLabel: "教程导读",
   },
 });
 

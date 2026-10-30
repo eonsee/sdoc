@@ -1,0 +1,625 @@
+---
+title: 技术栈
+description: 一套可执行的能碳系统技术选型：若依版本、前后端、MySQL/Redis/TDengine、EMQX、报表、部署与安全。
+sidebar:
+  order: 2
+---
+
+这一章给出一份**可以直接写进项目立项书**的技术栈，而不是罗列所有流行技术。每个选择都说明理由、版本和替代方案；你可以按团队情况替换，但要知道替换的代价。
+
+## 1. 选型原则
+
+| 原则 | 含义 | 反面案例 |
+| --- | --- | --- |
+| 团队会什么就用什么 | 交付周期比技术先进性重要 | 团队没人写过 Go，却为了“高并发”上 Go |
+| 能单体不微服务 | 能碳系统初期并发不高，复杂度在采集和业务 | 20 个点位就上 Nacos + Gateway + 链路追踪 |
+| 时序数据用时序库 | 高频写入、按时间范围聚合是刚需 | 所有数据塞 MySQL，三个月后查询超时 |
+| 协议适配要可插拔 | 现场协议五花八门，不能写死在业务里 | 每接一种表就改一次采集主流程 |
+| 碳核算要可追溯 | 因子、口径、版本都会变 | 把排放因子写死在 Java 常量里 |
+| 先跑通一条链路 | 电→网关→MQTT→库→页面→报表 | 同时接五种介质，哪种都不稳定 |
+
+## 2. 技术栈总览
+
+| 层次 | 技术 | 推荐版本 | 作用 | 选它的理由 |
+| --- | --- | --- | --- | --- |
+| 语言 | Java | 8 或 17 | 后端主语言 | 若依生态成熟，工业协议库多 |
+| 框架 | Spring Boot | 2.5.15 / 2.7.18 / 3.2.x | 应用底座 | 若依默认集成，资料多 |
+| 底座 | RuoYi-Vue | 3.8.x | 权限、菜单、代码生成 | 开箱即用，二次开发成本低 |
+| 安全 | Spring Security + JWT | 随若依 | 登录、鉴权、会话 | 若依已封装，改造成本低 |
+| ORM | MyBatis | 随若依 | SQL 映射 | 复杂统计 SQL 可控 |
+| 业务库 | MySQL | 8.0.36+ | 台账、配置、结果 | 通用、运维简单、云厂商支持好 |
+| 缓存 | Redis | 7.2+ | Token、字典、最新值、锁 | 若依默认使用，生态成熟 |
+| 时序库 | TDengine | 3.3.x | 原始数据、聚合数据 | 写入快、压缩高、SQL 友好、中文资料多 |
+| 消息 | EMQX | 5.8.x | MQTT Broker | 工业物联网事实标准，集群和 ACL 完善 |
+| 协议 | Modbus / DL/T 645 / OPC UA / IEC 104 | — | 现场设备接入 | 覆盖 90% 以上的电表和 PLC |
+| 前端 | Vue 3 | 3.4+ | 页面框架 | 若依 Vue3 版官方支持 |
+| UI | Element Plus | 2.x | 组件库 | 与若依风格一致，表单表格强 |
+| 构建 | Vite | 5.x+ | 前端构建 | 启动快，配置简单 |
+| 状态 | Pinia | 2.x | 全局状态 | Vue 3 官方推荐 |
+| 图表 | ECharts | 5.5+ | 趋势、占比、能流 | 图表类型全，工业场景够用 |
+| 导出 | EasyExcel | 3.3+ | Excel 导入导出 | 内存占用低，API 简单 |
+| 定时任务 | Quartz（若依自带） | 随若依 | 聚合、报表、核算 | 不额外引入调度中心 |
+| 实时推送 | WebSocket / SSE | — | 驾驶舱刷新、报警 | 比轮询省资源 |
+| 对象存储 | MinIO | 最新稳定版 | 报告、附件、图片 | S3 兼容，可私有化 |
+| 容器 | Docker + Compose | 26+ | 部署 | 环境一致，交付简单 |
+| 反向代理 | Nginx | 1.26+ | 静态资源、HTTPS、转发 | 成熟稳定 |
+| 监控 | Prometheus + Grafana | 最新稳定版 | 指标、告警、看板 | 云原生标准 |
+| 日志 | Loki 或 ELK | 最新稳定版 | 日志检索 | 按团队熟悉度选 |
+
+## 3. 后端：若依怎么选
+
+### 3.1 三个版本的区别
+
+| 版本 | 架构 | 技术特点 | 适合场景 | 注意 |
+| --- | --- | --- | --- | --- |
+| RuoYi-Vue | 前后端分离单体 | Spring Boot 2.5.15、MyBatis、Spring Security、JWT | 中小型项目、单团队、快速交付 | 官方默认 JDK 8，Spring Boot 版本较老 |
+| RuoYi-Cloud | Spring Cloud Alibaba 微服务 | Nacos、Gateway、Sentinel、OpenFeign | 多园区、多团队、需要独立扩容 | 运维复杂度高，需要 DevOps 能力 |
+| RuoYi-Vue-Plus | 第三方增强单体 | Spring Boot 3、JDK 17、Sa-Token、MyBatis-Plus、Redisson | 想用新 JDK、需要多租户/工作流 | **第三方项目**，需评估社区活跃度和升级风险 |
+
+<Aside type="caution" title="RuoYi-Vue-Plus 不是官方版本">
+  `RuoYi-Vue-Plus` 由第三方团队维护，功能和写法与官方 RuoYi-Vue 有差异。选它没问题，但要在立项文档里写清楚“基于第三方增强版”，并确认 license、升级路线和社区支持。
+</Aside>
+
+### 3.2 推荐路线
+
+**大多数能碳项目选这条：**
+
+```text
+后端：RuoYi-Vue（官方） + JDK 8/17 + Spring Boot 2.5.15/2.7.18
+前端：RuoYi-Vue3（官方 Vue3 版） + Vue 3 + Element Plus + Vite
+```
+
+理由：
+
+- 权限、菜单、部门、字典、代码生成、定时任务都是现成的，能省 4～6 周。
+- 能碳系统的技术难点在采集、统计和碳核算，不在后台脚手架。
+- 团队招人容易，遇到问题搜索资料多。
+
+**如果客户明确要求 JDK 17 / Spring Boot 3：**
+
+- 方案 A：RuoYi-Vue 官方版自行升级到 Spring Boot 3（`javax.*` 改 `jakarta.*`，Spring Security 配置方式变化，工作量约 1～2 周）。
+- 方案 B：选 RuoYi-Vue-Plus（第三方），先做一次代码审查和升级演练。
+- 方案 C：只把采集服务用 Spring Boot 3，主应用保持 2.x，两者通过 MQTT/HTTP 解耦。
+
+<Aside type="warning" title="Spring Boot 2.5.15 已停止官方维护">
+  如果项目有安全审计或等保要求，建议至少升到 Spring Boot 2.7.18（2.x 最后版本），或直接评估 3.x。升级前先跑通若依的登录、权限、代码生成、定时任务四条主链路。
+</Aside>
+
+### 3.3 核心依赖
+
+后端 `pom.xml` 里通常会用到：
+
+```xml title="pom.xml（节选）"
+<properties>
+    <java.version>1.8</java.version>
+    <spring-boot.version>2.5.15</spring-boot.version>
+    <mybatis.version>3.5.16</mybatis.version>
+    <druid.version>1.2.23</druid.version>
+    <jwt.version>0.9.1</jwt.version>
+</properties>
+
+<dependencies>
+    <!-- 若依基础模块 -->
+    <dependency>
+        <groupId>com.ruoyi</groupId>
+        <artifactId>ruoyi-framework</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>com.ruoyi</groupId>
+        <artifactId>ruoyi-system</artifactId>
+    </dependency>
+
+    <!-- 时序库：TDengine JDBC -->
+    <dependency>
+        <groupId>com.taosdata.jdbc</groupId>
+        <artifactId>taos-jdbcdriver</artifactId>
+        <version>3.3.0</version>
+    </dependency>
+
+    <!-- MQTT 客户端 -->
+    <dependency>
+        <groupId>org.eclipse.paho</groupId>
+        <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+        <version>1.2.5</version>
+    </dependency>
+
+    <!-- Modbus 主站 -->
+    <dependency>
+        <groupId>com.intelligt.modbus</groupId>
+        <artifactId>jlibmodbus</artifactId>
+        <version>1.2.9.7</version>
+    </dependency>
+
+    <!-- Excel 导出 -->
+    <dependency>
+        <groupId>com.alibaba</groupId>
+        <artifactId>easyexcel</artifactId>
+        <version>3.3.4</version>
+    </dependency>
+</dependencies>
+```
+
+<Aside type="note" title="版本以官方仓库为准">
+  上面的版本是写作时的常见组合。实际项目请以 RuoYi 官方 `pom.xml`、TDengine 官方文档和 MQTT 客户端的最新稳定版为准，并在 CI 里锁定版本，避免不同环境解析出不同依赖。
+</Aside>
+
+### 3.4 分层与包结构
+
+```text
+com.ruoyi.energy
+├── config          # MQTT、TDengine、线程池、WebSocket 配置
+├── controller      # 只做参数校验和调用 Service
+├── service         # 业务逻辑
+│   ├── impl
+│   ├── collect     # 采集编排
+│   ├── stat        # 统计聚合
+│   ├── carbon      # 碳核算
+│   └── alarm       # 报警规则
+├── mapper          # MyBatis Mapper
+├── domain          # 实体、DTO、VO
+├── enums           # 能源类型、数据质量、核算范围
+└── util            # 单位换算、点位编码、CRC 校验
+```
+
+硬性约定：
+
+- Controller 不写业务逻辑，不直接调 Mapper。
+- 所有金额、碳排放量用 `BigDecimal`，禁止 `double`。
+- 所有统计 SQL 带组织、时间范围、介质三个条件，防止全表扫描。
+- 所有采集写入带 `quality` 和 `ts`，不允许缺时间戳。
+
+## 4. 前端
+
+### 4.1 技术组合
+
+| 能力 | 选择 | 说明 |
+| --- | --- | --- |
+| 框架 | Vue 3 + TypeScript（可选） | 若依 Vue3 版默认 JavaScript，团队会 TS 就上 TS |
+| UI | Element Plus | 表格、表单、弹窗、树 |
+| 构建 | Vite | 热更新快 |
+| 路由 | Vue Router | 若依已封装动态路由 |
+| 状态 | Pinia | 用户、权限、字典 |
+| 请求 | Axios | 若依封装了 `request.js`，统一 token、错误码 |
+| 图表 | ECharts | 趋势、柱状、饼图、桑基图、仪表盘 |
+| 时间 | dayjs | 轻量，替换 moment |
+| 导出 | 后端 EasyExcel | 前端只负责下载 |
+
+### 4.2 页面组织
+
+```text
+src/views/energy
+├── dashboard/          # 驾驶舱
+├── monitor/            # 实时监控
+├── analysis/           # 能耗分析
+├── carbon/             # 碳管理
+├── alarm/              # 报警
+└── base/               # 计量点、设备、介质
+src/api/energy
+├── dashboard.js
+├── monitor.js
+├── analysis.js
+└── carbon.js
+```
+
+### 4.3 图表选型
+
+| 需求 | 图表 | 注意 |
+| --- | --- | --- |
+| 趋势 | 折线图 | 超过 2,000 点要降采样 |
+| 占比 | 饼图/环图 | 类别不超过 8 个，其余归“其他” |
+| 排名 | 横向条形图 | 数值差距大时用对数轴或截断 |
+| 能流 | 桑基图 | 节点层级不要超过 4 层 |
+| 定额完成率 | 仪表盘/进度条 | 同时显示实际值和目标值 |
+| 设备状态 | 状态灯/热力图 | 颜色要符合行业习惯：红停绿开 |
+
+<Aside type="tip" title="驾驶舱性能">
+  驾驶舱不要每次打开都实时算。用定时任务每 5 分钟生成一次 KPI 快照，页面直接读快照；只有“实时功率”这类指标才走 WebSocket。这样即使数据库压力大，驾驶舱也不会转圈。
+</Aside>
+
+## 5. 数据层
+
+### 5.1 存储分工
+
+| 存储 | 存什么 | 不存什么 |
+| --- | --- | --- |
+| MySQL | 组织、用户、计量点、设备、因子、核算结果、统计日/月表 | 秒级/分钟级原始数据 |
+| Redis | Token、字典缓存、最新点位值、分布式锁、限流计数 | 需要长期保存的历史数据 |
+| TDengine | 原始采集值、小时/日聚合、报警事件 | 复杂事务型业务数据 |
+| MinIO | 报告 PDF/Word、导入模板、现场照片 | 结构化查询数据 |
+| 本地磁盘 | 日志、临时文件 | 需要备份的业务数据 |
+
+### 5.2 为什么原始数据不进 MySQL
+
+假设 1,000 个点位、每分钟一条：
+
+```text
+1,000 × 60 × 24 × 365 ≈ 5.26 亿条/年
+```
+
+MySQL 单表到这个量级，即使加索引，按时间范围聚合也会非常慢，而且写入会与业务查询争抢 IO。时序库按时间分区、按列压缩，同样的数据通常只有 MySQL 的十分之一到五分之一。
+
+### 5.3 时序库对比
+
+| 数据库 | 优势 | 劣势 | 适合 |
+| --- | --- | --- | --- |
+| TDengine | 写入快、压缩率高、SQL 接近 MySQL、支持超级表 | 生态相对年轻，部分高级分析弱 | **本教程首选**，工业场景多 |
+| InfluxDB | 生态成熟、Flux 查询强 | 集群版收费，学习曲线陡 | 团队已熟悉 InfluxDB |
+| TimescaleDB | PostgreSQL 扩展，SQL 完整 | 数据量大时压缩和写入不如专用时序库 | 需要事务 + 时序混合 |
+| ClickHouse | 聚合分析极快 | 不适合高频单条写入，运维较重 | 离线分析、报表仓库 |
+
+### 5.4 TDengine 建模
+
+一个计量点一张子表，所有子表挂在一个超级表下：
+
+```sql
+CREATE DATABASE IF NOT EXISTS energy
+  PRECISION 'ms'
+  KEEP 1095
+  DURATION 10;
+
+CREATE STABLE IF NOT EXISTS energy.point_data (
+  ts        TIMESTAMP,
+  value     DOUBLE,
+  quality   TINYINT
+) TAGS (
+  point_code  BINARY(64),
+  meter_code  BINARY(64),
+  energy_type BINARY(16),
+  site_id     BIGINT
+);
+
+-- 每个点位一张子表，子表名可用点位编码的哈希或序号
+CREATE TABLE IF NOT EXISTS energy.p_0001
+  USING energy.point_data
+  TAGS ('SH01-C01-ELE-001.EP', 'SH01-C01-ELE-001', 'electricity', 1);
+```
+
+写入：
+
+```sql
+INSERT INTO energy.p_0001
+  USING energy.point_data
+  TAGS ('SH01-C01-ELE-001.EP', 'SH01-C01-ELE-001', 'electricity', 1)
+  VALUES (NOW, 45678.9, 0);
+```
+
+查询某点位一天的数据：
+
+```sql
+SELECT ts, value
+FROM energy.point_data
+WHERE point_code = 'SH01-C01-ELE-001.EP'
+  AND ts >= '2026-10-01 00:00:00'
+  AND ts <  '2026-10-02 00:00:00'
+ORDER BY ts;
+```
+
+<Aside type="caution" title="标签基数">
+  `point_code` 作为标签，基数等于点位数量。几万点位没问题，但不要把时间戳、随机数、报警内容这类高基数字段做成标签，否则索引会膨胀。
+</Aside>
+
+### 5.5 Redis 用法
+
+| Key 设计 | 类型 | 用途 | TTL |
+| --- | --- | --- | --- |
+| `energy:latest:{pointCode}` | Hash | 最新值、时间、质量码 | 10 分钟 |
+| `energy:meter:online:{meterCode}` | String | 在线状态 | 5 分钟 |
+| `energy:alarm:active:{siteId}` | Set | 活动报警 | 随报警 |
+| `login_tokens:{uuid}` | String | 若依登录 token | 30 分钟 |
+| `energy:lock:calc:{period}` | String | 核算任务防重 | 1 小时 |
+
+最新值放 Redis 是为了让监控页和驾驶舱不用查时序库。写入采集数据时同步更新，读取时先查 Redis，miss 再回源时序库。
+
+## 6. 物联网接入
+
+### 6.1 协议全景
+
+| 协议 | 典型设备 | 传输 | 默认端口 | 特点 |
+| --- | --- | --- | --- | --- |
+| Modbus RTU | 电表、水表、温控器、PLC | RS-485/RS-232 | — | 简单、通用、需要轮询 |
+| Modbus TCP | 网关、PLC、以太网仪表 | TCP | 502 | 帧格式同 RTU，去掉 CRC |
+| DL/T 645-2007 | 国内电能表 | RS-485 | — | 电力行业标准，BCD 编码 |
+| IEC 60870-5-104 | 电力综自、变电站 | TCP | 2404 | 遥测遥信，电力调度常用 |
+| OPC UA | 西门子、倍福、上位机 | TCP | 4840 | 自描述、安全模型完整 |
+| Siemens S7 | S7-1200/1500 | TCP | 102 | 西门子私有协议，需 S7 库 |
+| BACnet/IP | 楼宇空调、暖通 | UDP | 47808 | 楼宇自控标准 |
+| MQTT | 网关、DTU、边缘盒子 | TCP/TLS | 1883/8883 | 轻量、发布订阅、适合上行 |
+| HTTP/HTTPS | 第三方系统、云平台 | TCP | 80/443 | 通用，实时性差 |
+
+### 6.2 为什么用 MQTT
+
+- **省流量**：头部小，适合 4G/NB-IoT。
+- **断线重连**：内置 Keep Alive、Last Will，网关掉线平台能感知。
+- **发布订阅**：一个网关的数据可以同时给采集服务、报警服务、大屏使用。
+- **QoS**：至少一次（QoS 1）能满足绝大多数计量场景。
+
+HTTP 轮询也能用，但每个网关都要暴露接口、处理鉴权、处理重复上报，规模一上来就乱。
+
+### 6.3 Topic 设计
+
+```text
+energy/{siteId}/{gatewayId}/telemetry      # 遥测数据
+energy/{siteId}/{gatewayId}/status         # 网关状态（retained）
+energy/{siteId}/{gatewayId}/event          # 报警/事件
+energy/{siteId}/{gatewayId}/cmd            # 平台下行命令
+```
+
+示例：
+
+```text
+energy/SH01/GW-SH01-01/telemetry
+energy/SH01/GW-SH01-01/status
+```
+
+约定：
+
+- QoS 1，遥测不 retained；状态 retained，新订阅者能立刻知道网关在线状态。
+- Payload 用 JSON，字段名短但可读；高频场景可改 Protobuf。
+- 每条消息必须带 `gatewayId`、`ts`、`seq`，便于去重和补传。
+- 下行命令单独 topic，带 `cmdId` 和过期时间，避免网关离线后执行过期命令。
+
+### 6.4 采集服务架构
+
+```text
+┌─────────────────────────────────────────────┐
+│              Collector 服务                  │
+│                                             │
+│  ┌──────────┐   ┌──────────┐   ┌─────────┐  │
+│  │ Modbus   │   │ DL/T 645 │   │ OPC UA  │  │
+│  │ Adapter  │   │ Adapter  │   │ Adapter │  │
+│  └────┬─────┘   └────┬─────┘   └────┬────┘  │
+│       └──────────────┼──────────────┘       │
+│                      ▼                      │
+│              ┌──────────────┐               │
+│              │ 数据清洗/校验 │               │
+│              └──────┬───────┘               │
+│                     ▼                       │
+│         ┌───────────────────────┐           │
+│         │ 批量写入 + Redis 最新值 │           │
+│         └───────────┬───────────┘           │
+│                     ▼                       │
+│              ┌──────────────┐               │
+│              │ 报警规则引擎  │               │
+│              └──────────────┘               │
+└─────────────────────────────────────────────┘
+```
+
+适配器接口建议：
+
+```java
+public interface ProtocolAdapter {
+    String protocol();
+    void connect();
+    void disconnect();
+    boolean isConnected();
+    List<PointValue> read(DeviceConfig device, List<PointConfig> points);
+    default void write(DeviceConfig device, PointConfig point, Object value) {
+        throw new UnsupportedOperationException("只读适配器");
+    }
+}
+```
+
+新增协议只实现这个接口，不改采集主流程。这是能碳系统能长期维护的关键。
+
+### 6.5 边缘网关选型
+
+| 方案 | 适合 | 优点 | 缺点 |
+| --- | --- | --- | --- |
+| 串口服务器 | 电表集中、有网线 | 便宜、稳定、透明传输 | 只做串口转 TCP，不做协议解析 |
+| 4G DTU | 分散点位、无网线 | 插卡即用、成本低 | 每台设备一张卡，流量和运维成本高 |
+| 边缘网关 | 多协议、需要本地逻辑 | 协议丰富、可缓存、可报警 | 价格较高，配置复杂 |
+| 工控机 + 自研程序 | 需要深度定制 | 完全可控 | 需要自己维护系统、看门狗、远程升级 |
+| PLC + OPC UA | 已有自动化系统 | 复用现有投资 | 受 PLC 品牌和授权限制 |
+
+## 7. 消息、任务与实时
+
+### 7.1 要不要 Kafka
+
+| 场景 | 建议 |
+| --- | --- |
+| 点位少于 5,000，单采集服务 | 不需要，MQTT + 内存队列足够 |
+| 多采集服务、需要削峰和解耦 | 加 Kafka 或 RocketMQ |
+| 需要回放历史消息、做流式计算 | Kafka + Flink |
+| 只是内部任务解耦 | RabbitMQ 更轻 |
+
+第一版不要上 Kafka。MQTT 到采集服务这一段已经解耦，采集服务内部用 `BlockingQueue` + 批量写就能扛住几千点位。
+
+### 7.2 定时任务
+
+若依自带 Quartz，足够做：
+
+- 分钟级：检查离线点位、生成实时报警。
+- 小时级：聚合小时值。
+- 日级：聚合日值、生成日报、清理临时数据。
+- 月级：生成月报、发起碳核算、归档。
+
+任务要**幂等**：同一小时重复跑，结果不能翻倍。用“统计周期 + 计量点”做唯一键，先删后插或 `ON DUPLICATE KEY UPDATE`。
+
+### 7.3 实时推送
+
+| 方案 | 适合 | 说明 |
+| --- | --- | --- |
+| WebSocket | 驾驶舱、报警弹窗 | 双向，若依可集成 Spring WebSocket |
+| SSE | 单向数据流 | 比 WebSocket 简单，HTTP/2 下表现好 |
+| 轮询 | 低频页面 | 实现简单，但浪费请求 |
+
+驾驶舱建议：KPI 每 30 秒轮询一次，实时功率和报警走 WebSocket。不要所有指标都走 WebSocket，否则页面一多，服务端连接数暴涨。
+
+## 8. 报表与可视化
+
+| 需求 | 方案 | 注意 |
+| --- | --- | --- |
+| Excel 导入导出 | EasyExcel | 大数据量分页写，避免 OOM |
+| PDF 报告 | OpenPDF / iText | iText 7 是 AGPL/商业双授权，商用需确认 |
+| Word 模板报告 | poi-tl | 用模板占位符，碳报告排版省事 |
+| 在线报表 | JimuReport / UReport2 | 先确认 license 和商用限制 |
+| 大屏 | ECharts + 自定义布局 | 不建议为了大屏引入重型 3D 引擎 |
+| 打印 | 浏览器打印 / PDF | 报表页做打印样式 |
+
+碳核算报告建议用 **Word 模板 + poi-tl**：格式由碳管理员在 Word 里调好，系统只负责填数据、插图表、生成附件。比用代码画 PDF 省大量时间。
+
+## 9. 碳核算引擎设计
+
+### 9.1 因子库
+
+因子不能写死。表结构至少包含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `factor_code` | 因子编码 |
+| `energy_type` | 能源介质/排放源 |
+| `region` | 适用地区（全国/华北/华东……） |
+| `year` | 适用年份 |
+| `factor_value` | 因子值 |
+| `unit` | 单位，如 tCO₂/MWh |
+| `source` | 来源文件/公告 |
+| `version` | 版本号 |
+| `effective_from` / `effective_to` | 生效区间 |
+| `status` | 草稿/启用/停用 |
+
+核算时按“介质 + 地区 + 年份 + 生效日期”匹配，匹配不到就报错，**不允许静默取默认值**。
+
+### 9.2 计算策略
+
+不同排放源的计算方式不同，用策略模式：
+
+```java
+public interface EmissionCalculator {
+    String sourceType();
+    BigDecimal calculate(EmissionContext context);
+}
+```
+
+- `ElectricityCalculator`：电量 × 电网因子。
+- `FuelCalculator`：消耗量 × 低位热值 × 含碳量 × 氧化率 × 44/12。
+- `SteamCalculator`：热量 × 供汽因子。
+- `RefrigerantCalculator`：补充量 × GWP / 1000。
+- `Scope3Calculator`：按类别单独实现。
+
+每种策略的输出统一为：
+
+```java
+public class EmissionResult {
+    private String sourceType;
+    private String scope;          // SCOPE_1 / SCOPE_2 / SCOPE_3
+    private BigDecimal activity;   // 活动数据
+    private String activityUnit;
+    private BigDecimal factor;
+    private String factorUnit;
+    private BigDecimal emission;   // tCO2e
+    private String factorVersion;
+    private String dataSource;     // 来自哪个表/哪个点位
+}
+```
+
+### 9.3 数值与单位
+
+- 所有计算用 `BigDecimal`，保留 6 位小数，最终报告按 2～3 位。
+- 单位换算集中在一个 `UnitConverter`，不要在业务代码里到处乘系数。
+- 时间统一存 UTC，展示按 `Asia/Shanghai`；碳核算期间按自然月。
+- 每次核算保存**输入快照**：活动数据、因子版本、公式版本。否则半年后无法解释结果怎么来的。
+
+## 10. 安全设计
+
+| 层面 | 措施 |
+| --- | --- |
+| 登录 | 若依 JWT + 图形验证码 + 密码错误锁定 |
+| 密码 | BCrypt，禁止明文和可逆加密 |
+| 权限 | 角色 + 菜单权限 + 按钮权限 + 数据权限 |
+| 接口 | `@PreAuthorize` 注解，禁止只靠前端隐藏按钮 |
+| SQL | MyBatis `#{}` 参数绑定，禁止字符串拼接 |
+| XSS | 若依自带过滤器，富文本单独白名单 |
+| 传输 | HTTPS；MQTT 用 8883 + TLS |
+| 网络 | OT/IT 分区，网关只允许出站到 EMQX |
+| 审计 | 登录日志、操作日志、核算锁定日志 |
+| 备份 | 数据库每日全量 + binlog，时序库按保留策略 |
+| 等保 | 若有要求，按等保 2.0 三级做整改 |
+
+<Aside type="danger" title="不要把采集网络直接暴露到公网">
+  现场网关、PLC、电表都不应该拥有公网 IP。正确做法是网关通过 4G/专线主动连接 EMQX，或者经 VPN/堡垒机运维。直接端口映射到公网，等于把工业控制网络交给扫描器。
+</Aside>
+
+## 11. 部署与运维
+
+| 能力 | 方案 | 说明 |
+| --- | --- | --- |
+| 容器化 | Docker + Docker Compose | 小项目足够，交付简单 |
+| 编排 | Kubernetes | 多节点、高可用时再上 |
+| 反向代理 | Nginx | HTTPS、静态资源、WebSocket 升级 |
+| CI/CD | Jenkins / GitLab CI | 构建、镜像、部署 |
+| 指标 | Prometheus + Spring Boot Actuator | JVM、接口、连接池 |
+| 看板 | Grafana | 采集延迟、MQTT 连接数、写入量 |
+| 日志 | Loki + Grafana 或 ELK | 按团队熟悉度 |
+| 链路 | SkyWalking（可选） | 微服务或接口多时再用 |
+| 备份 | mysqldump + TDengine 备份 + MinIO 版本 | 定期演练恢复 |
+
+## 12. 版本矩阵
+
+### 12.1 稳妥轨（推荐给大多数项目）
+
+| 组件 | 版本 | 备注 |
+| --- | --- | --- |
+| JDK | 8 | 若依官方默认 |
+| Spring Boot | 2.5.15 或 2.7.18 | 2.7.18 是 2.x 最后版本，建议优先 |
+| RuoYi-Vue | 3.8.x | 官方后端 |
+| RuoYi-Vue3 | 3.8.x | 官方 Vue3 前端 |
+| Vue | 3.4+ | — |
+| Element Plus | 2.x | — |
+| Vite | 5.x | — |
+| MySQL | 8.0.36+ | utf8mb4 |
+| Redis | 7.2+ | — |
+| TDengine | 3.3.x | — |
+| EMQX | 5.8.x | — |
+| Nginx | 1.26+ | — |
+| Node | 20 LTS | 构建用 |
+| Maven | 3.9+ | — |
+
+### 12.2 现代轨（JDK 17 / Spring Boot 3）
+
+| 组件 | 版本 | 备注 |
+| --- | --- | --- |
+| JDK | 17 | LTS |
+| Spring Boot | 3.2.x | `javax` → `jakarta` |
+| RuoYi | RuoYi-Vue 自行升级或 RuoYi-Vue-Plus | 需评估 |
+| Vue | 3.5+ | — |
+| Element Plus | 2.x | — |
+| MySQL | 8.0.36+ | — |
+| Redis | 7.2+ | — |
+| TDengine | 3.3.x | — |
+| EMQX | 5.8.x | — |
+
+<Aside type="note" title="不要混用两条轨">
+  同一个项目里，主应用用 JDK 8、采集服务用 JDK 17 是可行的，但要分开构建、分开部署。不要让一个 Maven 多模块工程同时要求两个 JDK，CI 会很难维护。
+</Aside>
+
+## 13. 选型问答
+
+**Q：为什么不用微服务？**
+A：能碳系统的并发主要来自采集写入，不是用户请求。单体 + 独立采集服务足以支撑几千点位。微服务带来的 Nacos、网关、链路追踪、分布式事务，会增加运维和排错成本。等多园区、多团队、独立扩容成为真实需求再拆。
+
+**Q：为什么不用 MySQL 存原始数据？**
+A：写入频率高、按时间范围聚合多、数据量大。MySQL 不是不能存，而是成本和查询体验都差。业务配置和统计结果继续用 MySQL，原始数据交给时序库。
+
+**Q：为什么用 MQTT 而不是 HTTP 上报？**
+A：MQTT 长连接、头部小、支持 QoS 和 Last Will，适合大量网关和弱网环境。HTTP 每次上报都要建连和鉴权，网关掉线平台也难以立刻感知。
+
+**Q：为什么采集服务要独立？**
+A：协议库多为阻塞 IO，采集任务会占用线程；采集服务还需要部署到靠近现场的网络区域。独立后可以单独重启、扩容、限权，不影响业务页面。
+
+**Q：要不要上 Kubernetes？**
+A：单机 Docker Compose 能稳定跑，就不要上 K8s。只有在多节点高可用、弹性扩容、统一发布成为刚需时才上。小项目上 K8s，运维成本往往超过收益。
+
+**Q：信创环境怎么办？**
+A：数据库可换达梦 DM8 或人大金仓 KingbaseES，操作系统换麒麟/统信，中间件换东方通。要注意：SQL 方言、分页语法、`ON DUPLICATE KEY`、时序库支持都要重新验证。TDengine 和 EMQX 也有信创适配版本，选型前问厂商要兼容性清单。
+
+## 14. 一页纸选型结论
+
+如果只记一句话：
+
+```text
+RuoYi-Vue（单体） + Vue 3 + MySQL + Redis + TDengine
++ EMQX + 独立 Collector（Modbus / DL/T 645 / OPC UA）
++ ECharts + EasyExcel + Docker Compose
+```
+
+这套组合的优点是：**每一层都有成熟替代品，团队不需要同时学五种新技术，采集和业务可以分开演进**。下一章进入硬件，把这条链路最前端的数据来源讲清楚。
