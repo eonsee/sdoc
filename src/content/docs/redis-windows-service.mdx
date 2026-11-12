@@ -1,0 +1,90 @@
+---
+title: Windows 下设置 Redis 开机自动启动（注册系统服务）
+description: 把 Windows 版 Redis 5.0.14.1 注册为系统服务实现开机自启，并解决带密码连接时的 NOAUTH 认证错误。
+sidebar:
+  order: 6
+---
+
+本文针对 Redis 5.0.14.1（Windows 版），通过注册 Windows 系统服务的方式实现 Redis 开机自动启动，并顺带解决带密码连接时的 NOAUTH 认证问题。
+
+## 当前环境与现象
+
+当前 Redis 位于 `F:\Envioment\redis`，通过 `redis-server.exe redis.windows.conf` 手动启动，端口 `6379`，单机（standalone）模式：
+
+![手动启动 redis-server.exe redis.windows.conf](/images/redis-windows-service/manual-start.png)
+
+由于已经在配置文件中设置了密码，直接执行 `redis-cli ping` 会返回认证错误：
+
+```cmd
+C:\Users\KFB>redis-cli ping
+(error) NOAUTH Authentication required.
+```
+
+![redis-cli ping 返回 NOAUTH Authentication required.](/images/redis-windows-service/noauth.png)
+
+<Aside type="caution" title="开始配置前">
+  请先关闭当前手动打开的 `redis-server` 黑窗口，避免端口占用，也不要让服务模式和手动模式同时运行。
+</Aside>
+
+## 操作步骤
+
+<Steps>
+  <Step title="以管理员身份打开 CMD，进入 Redis 目录">
+    右键「命令提示符」选择**以管理员身份运行**，然后切换到 Redis 安装目录：
+
+    ```cmd
+    cd F:\Envioment\redis
+    ```
+  </Step>
+  <Step title="安装 Redis 系统服务（绑定现有配置文件）">
+    执行以下命令，把 Redis 注册为 Windows 系统服务，并绑定当前使用的 `redis.windows.conf`：
+
+    ```cmd
+    redis-server.exe --service-install redis.windows.conf --loglevel verbose
+    ```
+
+    执行成功后会提示 `Redis successfully installed as a service.`。该服务的默认启动类型即为**自动**，开机后会随系统自动运行。
+  </Step>
+  <Step title="启动 Redis 服务">
+    ```cmd
+    redis-server.exe --service-start
+    ```
+  </Step>
+  <Step title="带密码连接测试（解决 NOAUTH）">
+    两种方式任选其一。
+
+    **方式 1：登录时直接带密码（推荐）**
+
+    ```cmd
+    redis-cli -a 你的密码 ping
+    ```
+
+    **方式 2：先进入 CLI，再执行认证**
+
+    ```cmd
+    redis-cli
+    AUTH 你的密码
+    ping
+    ```
+
+    返回 `PONG` 即表示 Redis 连接与认证均正常。
+  </Step>
+  <Step title="（可选）在图形界面中确认服务启动类型">
+    按 `Win + R`，输入 `services.msc` 打开服务列表；找到 `Redis`，右键 →「属性」，确认启动类型为「自动」。
+  </Step>
+</Steps>
+
+## 其他常用服务命令
+
+| 操作 | 命令 |
+| --- | --- |
+| 停止服务 | `redis-server.exe --service-stop` |
+| 启动服务 | `redis-server.exe --service-start` |
+| 卸载服务（重装时使用） | `redis-server.exe --service-uninstall` |
+
+## 注意事项与常见坑
+
+- **配置修改后需重启服务**：修改 `redis.windows.conf`（如密码、端口）后，必须在服务中重启 Redis 才生效；不要同时用手动黑窗口和服务模式启动。
+- **路径规范**：Redis 安装路径不要包含中文或空格。
+- **权限要求**：安装服务命令必须在管理员身份的 CMD 中执行，否则会因权限不足安装失败。
+- **配置文件绑定**：重装或多实例时，注意 `--service-install` 后面指定的配置文件路径是否正确。

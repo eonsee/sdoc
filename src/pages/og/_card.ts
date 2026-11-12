@@ -12,8 +12,9 @@
  */
 import { createCardRenderer, type CardNode, type CardTypography } from "@cloudflare/nimbus-docs/og";
 import { root } from "astro:config/server";
+import { readFileSync } from "node:fs";
 
-import { logo } from "@/components/logo";
+import { fullLogo } from "@/components/logo";
 
 // The starter's light theme (src/styles/globals.css), in hex for Satori.
 const FOREGROUND = "#171717";
@@ -38,6 +39,10 @@ const renderer = await createCardRenderer({
   fonts: [
     { name: "Inter", source: font("Inter-Regular.ttf"), weight: 400 },
     { name: "Inter", source: font("Inter-Medium.ttf"), weight: 500 },
+    // Chinese titles and descriptions. Subset to the characters the docs use
+    // plus GB2312 level 1, so the cards stay small.
+    { name: "Noto Sans SC", source: font("NotoSansSC-Regular.woff"), weight: 400 },
+    { name: "Noto Sans SC", source: font("NotoSansSC-Medium.woff"), weight: 500 },
   ],
   emoji: "strip",
 });
@@ -48,13 +53,16 @@ const el = (type: string, style: Style, children?: CardNode | (CardNode | undefi
   props: { style, children },
 });
 
+// Satori draws the image from bytes, so the card never fetches its logo.
+const logoData = readFileSync(new URL(`public/${fullLogo.file}`, root)).toString("base64");
+
 const Logo = (height: number): CardNode => ({
-  type: "svg",
+  type: "img",
   props: {
-    width: Math.round((height * logo.width) / logo.height),
+    src: `data:image/png;base64,${logoData}`,
+    width: Math.round((height * fullLogo.width) / fullLogo.height),
     height,
-    viewBox: `0 0 ${logo.width} ${logo.height}`,
-    children: logo.paths.map((d) => ({ type: "path", props: { d, fill: FOREGROUND } })),
+    style: { objectFit: "contain" },
   },
 });
 
@@ -62,7 +70,7 @@ async function card({ section, title, sizes }: { section?: string; title: string
   const heading = await renderer.fit(title, { width: COLUMN, sizes, lines: 3, style: TITLE });
   const label = section ? await renderer.fit(section, { width: COLUMN, sizes: [26], lines: 1, style: SECTION }) : undefined;
   return el("div", { width: WIDTH, height: HEIGHT, display: "flex", position: "relative", background: BACKGROUND }, [
-    el("div", { position: "absolute", left: LEFT, top: 72, display: "flex" }, Logo(32)),
+    el("div", { position: "absolute", left: LEFT, top: 72, display: "flex" }, Logo(56)),
     el("div", { position: "absolute", left: LEFT, right: LEFT, top: 148, height: 0, borderTop: `1.5px solid ${BORDER}` }),
     // Hung from the hairline rather than set on the bottom margin: X crops
     // the card to 2:1 and covers its foot with the link's domain.
