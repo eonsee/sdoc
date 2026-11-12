@@ -5,19 +5,24 @@ import nimbus, {
 } from "@cloudflare/nimbus-docs";
 import { tableScroll } from "@cloudflare/nimbus-docs/markdown";
 
+// Vercel exposes the production domain during the build; the placeholder is
+// only for local builds where no public URL exists yet.
+const site = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "https://example.com";
+
 const nimbusConfig = defineNimbusConfig({
-  // CHANGE_ME: your site's canonical origin (no trailing slash). Drives
-  // canonical URLs, absolute OG image URLs, robots.txt, sitemap, and the
-  // links in /llms.txt — leaving the placeholder breaks all of them.
-  site: "https://example.com",
-  // CHANGE_ME: your project's name — used for <title>, the home H1, and OG.
-  title: "Nimbus",
-  // CHANGE_ME: a one-line description of your docs — used for meta + OG.
-  description: "Nimbus, authoring tool for docs",
+  // The canonical origin (no trailing slash). Drives canonical URLs, absolute
+  // OG image URLs, robots.txt, sitemap, and the links in /llms.txt.
+  site,
+  // The project's name — used for <title>, the home H1, and OG.
+  title: "SDoc",
+  // A one-line description of the docs — used for meta + OG.
+  description: "SDoc 中文技术文档站：能碳管理系统实战教程、Nimbus 使用指南与开发笔记。",
   locale: "zh-CN",
-  // CHANGE_ME: your repository — shown as the GitHub link in the header.
-  github: "https://github.com/cloudflare/nimbus",
-  socialImageAlt: "Nimbus documentation preview",
+  // Shown as the GitHub link in the header.
+  github: "https://github.com/eonsee/sdoc",
+  socialImageAlt: "SDoc 文档预览",
   // The home page leads the sidebar; every other page joins it automatically.
   sidebar: {
     items: ["index", { autogenerate: { collection: "docs" } }],
