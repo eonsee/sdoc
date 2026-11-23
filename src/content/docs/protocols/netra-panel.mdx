@@ -1,0 +1,162 @@
+---
+title: "Netra Panel 基于Cloudflare Workers 的免费 VLESS/Trojan 节点代理面板"
+description: "Netra Panel 是一个基于 Cloudflare Workers 的免费、免服务器代理面板，可通过边缘计算免费部署科学上网节点，UI 界面和 BPB-Worker-Panel 类似。"
+sidebar:
+  order: 9
+  label: "Netra Panel 面板"
+---
+
+Netra Panel 是一个基于 Cloudflare Workers 的免费、免服务器代理面板，可通过边缘计算免费部署科学上网节点，UI 界面和 [BPB-Worker-Panel](https://github.com/bia-pain-bache/BPB-Worker-Panel) 类似。
+
+**Netra Panel 项目地址**：[https://github.com/netrair/netra-panel](https://github.com/netrair/netra-panel)
+
+**Netra Panel 核心特性**
+
+- 运行于 Cloudflare Workers — 无需 VPS、无需 Docker，省去维护和重启服务器的繁琐。
+- 内置支持 VLESS 与 Trojan 协议。
+- 多客户端订阅链接 — 完美支持 Xray-core、sing-box、Clash 以及基于 WireGuard 的客户端（如 v2rayNG、Streisand、Clash Meta、Hiddify、NekoBox 等）。
+- 分片（Fragment）与干扰（Noise）设置 — 帮助流量在严格的网络环境下更好地伪装和混淆。
+- 完整网页管理面板 — 无需编写或修改代码，即可轻松管理一切（UUID、密码、端口、DNS、路由规则、绕过/屏蔽列表）。
+- 一键部署 — 部署后即可直接使用合理默认值，无需复杂的初始化设置向导。
+- 可选面板密码 — 保护您的面板安全，如果是您独自使用该网址，也可以选择跳过密码。
+
+---
+
+## 准备工作
+
+- **Cloudflare 账号**：[Cloudflare 官网](https://dash.cloudflare.com/login)（建议新注册一个账号单独部署）
+- **自定义域名一个**(强烈建议)：可参考 [注册 INDEVS.in 永久免费二级域名](https://www.zoio.net/2026/02/free-indevs-in-domain.html)
+
+![登录 Cloudflare](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjKBJBGPyKaPW8qpqNMFe1_0PlThV4bWZ6FRBpSP6sDkw6xGQhtXKTWD-BcgXSwXIO7mdw_55GFS8MdQYgOVIZJEiUKJPzyXwNv12GCor7ZJG_FJ5U5b0_BpG4XKxjWVFqC8Pv4pt1F6tzLmbUKpDDbB1JRg4L0pwPw0fY_kw4bpKCKRDN73e_g15fCmXg/s1600/netra-panel-1.webp)
+
+**安全提示**：使用 Workers 部署代理协议的行为存在触发 Cloudflare 审查的风险，**强烈建议新注册一个 Cloudflare 账号**专门用于此用途，避免波及主力账号。
+
+---
+
+## 部署教程
+
+### 把域名托管到 Cloudflare
+
+虽然 Cloudflare 提供了默认域名，但由于众所周知的原因无法在大陆直连。建议绑定自己的域名并开启 CDN。你可以使用[免费域名](https://www.zoio.net/2026/02/free-indevs-in-domain.html)，并参考教程将[域名托管到 Cloudflare](https://www.zoio.net/2026/01/cloudflare.html)。
+
+---
+
+### 创建 Workers KV
+
+登录 Cloudflare，在左侧菜单栏选择「存储和数据库」-「Workers KV」，点击右上角的「Create Instance」创建 KV 空间。
+
+![创建 Workers KV](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgaWflS0LzYsdsqCTptt6WCR8NsX5MMBJQiObLZbRf_SB7C0Tj6xEzoAYLAx8xUIVZcsNh06S3qGQcQamDGBIRty737PSVS3bEHSIxGjz8HufD8BGxSJ38KzFM_lOWUbzxm0j737gPDElqMBIZiXWpx3vd9U0k3QH-CO10Cjc7W3RkALMtOr5UhAG8ZvIk/s1600/netra-panel-2.webp)
+
+在命名空间名称中填写自定义的 KV 空间名，点击创建。
+
+![自定义 Workers KV 空间名](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg1ty3GTTHpCdhyphenhypheniAdOe0VkkwRvGrRbaOlWW_8GtF_OrIBQtKwnOrb3XrKLP43shD9y3GD60oIl5yPfi2wsyjT3Opt-2nkMJKw-QX2ef0Fd7nJt8vsWIl0QQgvgX4FCJvgo0xuTt0KlkoO0r16m1IO1y7qbcPVIrzWEqhilkEREfsy9Q7XQ34VN9zJkhwY/s1600/netra-panel-3.webp)
+
+---
+
+### 创建 Workers
+
+登录 Cloudflare，在「计算和 AI」菜单选择「Workers 和 Pages」，点击右上角的「创建应用程序」。
+
+![创建 Workers](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiIEpCxKkkeB9SlX9QMjdsyvCfCC1PY6We7_T3wh7HanL-gWjm3JOuF0HFcjR80E-unu4QiIk7VIeKTfy77uokphGQNEEHZeIYrJbOXRSaklyiEIzpec3CJNFaj-Aoi-2wmCXJR76_GMuY5YW2pM3CBpHX1HA7z2GbQ6o-z5Osic5X1bzoW3HqRnm3Pt2k/s1600/netra-panel-4.webp)
+
+点击选择「从 Hello World! 开始」。
+
+![创建 Workers](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiu1yBXWalSPP6k2vzdCs0QjodjCOrngXtrpkvkWCgQMn2RmbsFS1h4lmAx6b-wA8iaZC0d0sAZef6FdU-B9EKlxwue5ZXIklfHC0bvMa9c5WCQMUWw5uKECdGoF6ALaMMa6H-fUF-3nDnZBsIhgou0m57fQEOAP2ObIAzzRpiiKlH9kHDB36otUdztb58/s1600/netra-panel-5.webp)
+
+Worker 名称可随便输入（作为默认域名前缀），然后点击「部署」。
+
+![部署 Workers](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh-Yd7rvzasP9zmVpRjGNw33BRW4b7oesoqmzOOwGSKuI7Op94dIPFGjjwsQwZwoWyLcMh0d_ghz-14LcYvTzYSwAGTqLG2XoDU0m2afrInj8WFDGy42m0QJ-fgUo0VgN7xzEfOaeMkSID8XE_LXacibDcWtajPaLdjIJHUh46zmwGYSvC1eentCB_FX0A/s1600/netra-panel-6.webp)
+
+---
+
+### 部署 Netra Panel 代码
+
+打开 Netra Panel 的项目代码页面：[https://github.com/netrair/netra-panel/blob/main/worker.js](https://github.com/netrair/netra-panel/blob/main/worker.js) ，点击右上角的「复制」图标，复制全部项目代码。
+
+![复制 Netra Panel 项目代码](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhvdjUmud856x-ZulhgQEQs1jkGSHeyqpkNV0qIUqW9RLHO7AeddDNhOkT8H7mnDo-I4pgyKSlnm_DIrVtiLmkNHwLysdLNS_JY5NifwJzBNBK0NyCQkmlUlaOGKhO4bClBPbLRVfeXMNCTRuTpznTCWXTRDBQPc0kV5LRItRxIBMn6h-o1P_eQ5_wSIXk/s1600/netra-panel-7.webp)
+
+回到 Cloudflare Workers 管理后台，点击右上角的「编辑代码」。
+
+![Cloudflare Workers 编辑代码](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj-VECY22TXB8oeY_cC3JT-OwE8QYaCslOz1-nlvR3P6n67JlPt5oo5CeQAu1XUBYnXAe-1eZUvP5C3osVult6bED_cW4NENgN1JnQeZ8lVbEVwXF9KJHYqJ_YFFoN1Nnhu_azmPoOTVwMvYBrya9eaAp8SQdVS2p1YLNH0lhrb05b3uRlbVh1qvhHNYK4/s1600/netra-panel-8.webp)
+
+**清空**原有代码，将复制的 Netra Panel 项目代码粘贴到代码区域，然后点击右上角的「部署」。
+
+![Netra Panel 项目代码部署](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhfMkSpwvsDu71mqXdTIgqSCrK1MquiznUYvaL2TVzYibqweQm7EcG-luhvDKDBV8qtC1Zc5YueWYeGvpMyd0XbMcemdGOBBPOfT7NUYyuAWfPeLAANdo1__sAbALWciUaC1YY1F1B3-t10aJB9S4Mh9kBl9KkgEjfh5JP1kp67YXZ3C_85q-qmNAI_A0A/s1600/netra-panel-9.webp)
+
+---
+
+### 绑定 KV 空间
+
+在 Worker 的「设置」 - 「变量和绑定」标签页中，找到 KV 命名空间绑定并点击「添加绑定」。
+
+![添加绑定](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiRI9WrgCHJQo-4VhIS-U-1L5En0fTtCpPLSIkFjdN3jR4PcjwgPxUCwmjGjhie8m_DtawtDarlzMdSTy86tA-3dkVDbL9jqds7pCLuFJoQNQxYK1JGtfttSmXWeQAjI2I92_9BfOjPUe8rsnltj4d5HeBudQ4CbI8Z6uR-_GLEhrCIYz5glpmnsbEegSg/s1600/netra-panel-10.webp)
+
+选择「KV 命名空间」，点击「添加绑定」：
+
+![绑定 KV 命名空间](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh47_iIKB2I2p_wP_NG6GzLpht5W84t5qKNZPwQFGcB7IUUSYn-b7ciAEgyR9KLC_siJB3yT3UkgA0L9WmAeBsHjloeEClbhokODGePPla49qKG8cgARGoCMkge2Y9h5pUqbDmGO5ILA94UZ8uuwzHSIV7QS_FoGq6iPnIiYj3skdsrayr4PPOqHyhamJU/s1600/netra-panel-11.webp)
+
+- 变量名称：填写小写字母 `kv`
+- KV 命名空间：选择刚刚创建好的 Workers KV
+
+![绑定 KV 命名空间](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjXVYTtY0B7lnujs4WZkutONBP4UVWnE6M8sj9wCGT3Ou3IgmLyKxYSR4TmwkeYdnjozYr5N3i4gUDdRcRYtOqxfHv5ev88tvudMPeveiXyXXeZhXU95e6IssOC4y2ROL6w9RYzni3oDQqdecucDARw3u86GlBsY1LWgtPqfFVVH9n7hUZNLQroJY1FnBY/s1600/netra-panel-12.webp)
+
+---
+
+### 添加自定义域（强烈建议）
+
+Cloudflare 官方分配给 Workers 的默认二级域名（以 `*.workers.dev` 结尾）在中国大陆已被全面阻断。为了正常使用，建议绑定一个自定义域名。
+
+在 Worker 设置中选择「域和路由」标签页，点击「添加自定义域」。
+
+![设置自定义域](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgUdSjjR2y3lb79W2Z2eJXHay_jZ2rNkUjxXYj_Hzec1nUmJoSptHhApMj_OunemNpKDUR1psB7btNHNULzjLkZ4ryTPbyyJIk_lRbaGKSz4GAjSYY35_2NmMi6zCRQvlYi_Jft0-eg6l_4ZxuJ5ZdC41vdQNyU7U0RGNlziuUjke5vAIo14MujuS8xC04/s1600/netra-panel-13.webp)
+
+输入你托管在 Cloudflare 上的子域名，然后点击「添加域」。
+
+![设置自定义域](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg-K9OBi0a-SS3KacC1lv8zaLyI1lRu88cOVygCEzllvVikdBfoPfdUCE_mRleBuwb08UNYk-eEduedrNysz8aWe-XVpz2pPRR2hjo9c9DuTemG2ytsD6V4d7q02lq9H0BZ-RSFrF9ckuAKh3Kb9FUYmhj3Hi8TzBmRdg6YMjfnUfhSAHibNXZOH2RXh_k/s1600/netra-panel-14.webp)
+
+---
+
+### Netra Panel 面板配置
+
+打开你的 Worker 访问地址（或绑定的自定义域名），在网址末尾加上 `/panel`（例如 `https://your-domain.com/panel`）以打开管理后台。首次访问时会提示你设置面板密码（也可以选择跳过）。
+
+![Netra Panel 首次登录设置面板密码](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjSKZGalpLx37F3Ia01Bu1x7k54fZHF_RGGbpulxDvofRWnfsYNr6L1lJkDPtVkbbdOJsxoFI6Xogns63-cFjR27AKcOFD0k8adyRSLD2GHRbv6uMVjw_Xz1sMYTRgZsHoeJ1pLmfOzQmIpQsdSp7NqJlMrJQpPeIOYm9g77LAUfQnRmGbIiqjVE1LMiMM/s1600/netra-panel-15.webp)
+
+在「代理设置」 - 「VLESS - Trojan」标签页中，建议将「TLS Ports」的端口全部选中以保证多客户端兼容，其他选项保持默认即可，最后点击应用。
+
+![Netra Panel TLS Ports 设置](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh1ILGH_Md_W6YhvJOlvcrTzYOck4xW129ZDIxA4yiW9W5WEfgOVQvBKbvYxhgITC939CNyzEfNqRsZTMrr3v5xx0JjMc-FP-k7RH-0lJ5CCwmtjQxBoYv9xngiQifbcGKDf_1uxddGSFN7ExDR8UUkSSCpNJeUuXMbF_pOvdM6M_pP-ytAtLyKQCLMEbs/s1600/netra-panel-17.webp)
+
+在「订阅」标签页中选择 「Normal」普通订阅，复制对应客户端的订阅链接。
+
+![Netra Panel 订阅链接](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgDN30rPkuhW7O8RLZyADbZveYZIz2_iiERURjJkrLRkWLT7MQ-AGsf2TSuGJIXsDcqTf9NTokaMhAxhNwtHze-BAOjBXZ2zEsElJlGYupav02U3nDtAr-mzHGg1v0_m1vnxKjNJ8l78ZrZ1eT9GodzFOere_nvymYqplCIYVW08a187GGoiOxVTUrYojk/s1600/netra-panel-18.webp)
+
+---
+
+## 在 V2rayN 中配置节点（示例）
+
+打开 V2rayN 添加订阅，详细的 V2rayN 使用教程可参考[V2rayN使用教程](https://www.zoio.net/2026/01/v2rayn.html)。
+
+![V2rayN 添加订阅](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjfI47grXSPrL8M6ffZpDBZIJuRcZpwqXxCkANI4HkHw5F6bzzduMRcSCVc62hZ7JoIttbjdiye9BteEAeY4NE3sujVaYv18VATNfj4TsoJbbiVAAMP5mkEDEF077gzinCz0Wn_hZTNGZocT2E3QHTtMhwVPv7wJUf5bhCSOpz-LMwmR_Ifp7nWwyfgxsw/s1600/netra-panel-19.webp)
+
+添加后更新当前订阅。
+
+![V2rayN 更新当前订阅](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh8E5fg9-jvvpBXaFY9KEOq_HLsmp81tY9FlR1xenPMlUBhYcRmtsXvmZKANLmVML73R_a3VRUAfSqeRPzDASqEKHh_PUklPI5U_ZC8fay7gMcFQlvb-UkHKnKiD0SRooaoemlHYmyk8rnqn5Yz1lCyihLoo90LVLcn1Vm0-2-DvlLXeHkKswjUOKYCJho/s1600/netra-panel-20.webp)
+
+开启「自动配置系统代理」，即可正常使用。
+
+![V2rayN 更新当前订阅](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEglabVoBiAxy2ckIC_KBt5ju59MvzgcXFGRlELY__6vLib-5mTDfnak4GyS3ci3immLqOR8rBoBLbYDwAuDxawW-ZT-srAlDfDybbBwZhPRoomaVgg7dUgpfwnylS8cqlAzbtMzHPewickKpTCk00SoMyV1RXgcyy5OO-kmBo52FB5kx5v3vGp2FLlrUNw/s1600/netra-panel-21.webp)
+
+通过 IP.SB 等网站可查看当前代理节点的 IP 信息，你也可以按需自行配置 Cloudflare 优选 IP 来提升连接速度。
+
+![节点代理IP示例](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgBOQ0vV6aWOv6dOcqFlT9rJPKroyvnTF-2_JzDqZGwVAmW4xbZAVm9ZzjKOgzIKy0i138KcQh9QDEhUPLb2BzBf1tFikrWIk_1alFRCK7lp6JKMSLi66lE-REAM_FO1Rz75PEtvrRRUVXhaMazyapUIMvEJyA1dN2KqGT8wbl969_tpXDorhAHTmPbHHE/s1600/netra-panel-22.webp)
+
+**相关推荐:**
+
+- [CFnew - 终端 通过 Cloudflare Pages 部署免费科学上网节点](/protocols/cfnew/)
+- [通过 Cloudflare Pages 部署 edgetunnel 创建免费科学上网节点](/protocols/edgetunnel/)
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-08-21，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[Netra Panel 基于Cloudflare Workers 的免费 VLESS/Trojan 节点代理面板](https://www.zoio.net/2026/08/netra-panel.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>

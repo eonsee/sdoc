@@ -1,0 +1,219 @@
+---
+title: "3x-ui v3.5.0 节点连接失败？七个已知 Bug 及临时解决方案汇总"
+description: "3x-ui v3.5.0 带来了 MTProto 多客户端、SQLite → PostgreSQL 迁移、50 万级客户端扩展性等一系列大更新,同时也把内置的 xray-core 升级到了 v26.7.11。核心版本一升级,面板和内核之间就冒出了不少兼容性问题。本文整理了目前在官…"
+sidebar:
+  order: 10
+  label: "3x-ui 3.5.0 问题汇总"
+---
+
+3x-ui v3.5.0 带来了 MTProto 多客户端、SQLite → PostgreSQL 迁移、50 万级客户端扩展性等一系列大更新,同时也把内置的 xray-core 升级到了 v26.7.11。核心版本一升级,面板和内核之间就冒出了不少兼容性问题。本文整理了目前在官方仓库(MHSanaei/3x-ui、XTLS/Xray-core)中能查到的六个已知问题附上复现条件、症状和临时解决方案,方便大家升级前后排查。
+
+这些问题大致可以分成两类:一类是**特定配置组合**才会触发,避开对应条件基本就没事(第一、二、四、六条);另一类是 **xray-core v26.7.11 内核本身的普遍性回归**,只要用 REALITY 就可能受影响,跟具体怎么配置关系不大(第三、五条)——后一类建议默认就把内核降级规避,不要等踩坑了再处理。
+
+~~截稿时(2026年7月19日)以下问题除特别说明外均为官方仓库中的 open issue,尚未发布正式修复,建议持续关注对应 issue 的后续状态。~~
+
+3x-ui 在2026.7.30更新到了 v3.6.0版本， [xray-core 升至 v26.7.28、订阅正确性和面板加固](https://www.zoio.net/2026/07/3x-ui-v360-update.html)
+
+---
+
+## 一、REALITY dest 选 www.microsoft.com 握手失败
+
+对应 issue:[XTLS/Xray-core #6356](https://github.com/XTLS/Xray-core/issues/6356)(#6402 为同一问题的重复报告,已被官方关闭并合并指向 #6356)
+
+这个 bug 出在 **REALITY 库本身(github.com/xtls/reality)的硬编码限制**,不是 v26.7.11 才引入的新回归——最早在 v26.3.27 环境下就有人复现过,属于长期存在的通用限制,只要用 microsoft.com 做伪装目标,不管内核版本新旧都会踩到,和面板版本无关。
+
+**触发条件**:REALITY 的 dest/serverNames(目标)设置为 `www.microsoft.com:443`。
+
+**症状**:
+
+- 服务端日志出现类似 `Certificate: 8273, which is larger than size = 8192` 的报错
+- 客户端提示握手失败/超时,连接建立不起来,延迟 -1
+- 用 curl/openssl s_client 直连该服务器到 microsoft.com:443 完全正常,说明不是网络问题
+
+**原因**:微软服务器返回的 TLS Certificate 记录长度为 8273 字节,超过了 REALITY 服务端握手解析器里硬编码的 8192 字节上限,导致 REALITY 在解析真实握手数据时直接失败。
+
+临时解决方案:
+
+- **换一个 dest 目标**,目前唯一可行方案,推荐候选:`www.cloudflare.com:443`、`www.bing.com:443`、`www.amazon.com:443`...
+- 换目标时服务端和客户端的 `SNI` 必须同步修改,否则握手依然失败
+- 换新目标后建议开 `"show": true` 观察一次日志,确认证书记录长度没有超限
+
+---
+
+## 二、VLESS-Reality 安全配置中 最小客户端版本 和 最大客户端版本 默认值存在逻辑冲突
+
+对应 issue:[MHSanaei/3x-ui #6069](https://github.com/MHSanaei/3x-ui/issues/6069)
+
+入站设置（安全/Reality配置）最小客户端版本（minClientVersion） 和最大客户端版本（maxClientVersion）默认值存在逻辑冲突，造成链接失败。
+
+最小客户端版本会将自身设置为更高的版本（例如，26.3.27），而最大客户端版本会将自身设置为较旧的版本（例如，25.9.11）。
+
+临时解决方案:
+
+- 最低客户端版本：1.0.0
+- 最高客户端版本：留空
+
+---
+
+---
+
+## 三、REALITY 订阅在 Clash/Mihomo 客户端认证失败
+
+对应 issue:[MHSanaei/3x-ui #5957](https://github.com/MHSanaei/3x-ui/issues/5957)
+
+**触发条件**:VLESS + TCP + REALITY 入站,客户端通过面板生成的**原生 Clash/Mihomo 订阅**(`/clash/<sub-id>`)导入节点。
+
+**症状**:
+
+- Clash Verge Rev / Mihomo 报错 `REALITY authentication failed`,完全连不上
+- 同样的参数手动填到 v2rayN 里,是能正常连接的
+
+**原因**:问题出在订阅生成这一步,面板转换出来的 Clash 配置里,某个 REALITY 字段(比如 spiderX、Flow)没能跟入站的实际设置对齐,导致 Mihomo 拿到的参数和真实节点对不上。节点本身和 Xray 内核都没有问题。
+
+临时解决方案:
+
+- 暂时不用面板原生 Clash 订阅,改用 v2rayN / v2rayNG / Shadowrocket 等原生支持 REALITY 的客户端手动导入
+- 或者用面板生成的 VLESS 分享链接(`vless://...`)手动导入到 Clash Meta 内核客户端,而不是走订阅链接
+
+---
+
+## 四、出站(Outbound)无 TLS 的 VLESS 被面板误拒
+
+对应 issue:[MHSanaei/3x-ui #5916](https://github.com/MHSanaei/3x-ui/issues/5916)
+
+**触发条件**:在**出站**配置里使用 VLESS 但不带 TLS/加密,常见于级联到无域名的内网服务器、纯内网穿透场景。
+
+**症状**:
+
+- 面板日志报错:`vless without TLS or other encryption is prohibited unless the server address is a private IP or domain`
+- 即使把外部 Xray 内核手动降级到旧版本(如 26.4.25),这个报错依然出现
+- 该出站配置在这个旧版本内核上本来是完全合法的,但连接不上
+
+**原因**:v3.5.0 面板二进制内嵌了更新版本的 xray-core 校验库(v26.7.11+)。配置真正下发给外部 Xray 进程之前,面板会先用自己内置的新规则做一次校验——哪怕你实际运行的是旧内核,面板依然拿新规则来拦。这是面板侧的逻辑问题,和你选择的 Xray 内核版本无关。
+
+临时解决方案:
+
+- 给受影响的出站补上 TLS(哪怕是自签证书),避开"无 TLS"这条校验分支
+- 如果对端确实是私网 IP,确认地址写的是纯 IP 而不是域名——面板只对"私网 IP 或 domain socket"放行
+- 实在无法绕开的,考虑暂时回退到 v3.4.2(见文末降级方法)
+
+---
+
+## 五、XHTTP + REALITY 在 v26.7.11 内核下直接失联
+
+对应 issue:[XTLS/Xray-core #6482](https://github.com/XTLS/Xray-core/issues/6482)
+
+这是 **xray-core 内核本身的普遍性回归**,不是某个特定配置组合才触发,凡是升级到 v26.7.11 内核并用 XHTTP+REALITY 的用户都会中招。
+
+**触发条件**:VLESS + XHTTP + REALITY 入站,内核版本是 v26.7.11(也就是 3x-ui v3.5.0 默认捆绑的版本)。
+
+**症状**:
+
+- 同样的配置在 v26.6.27 下完全正常
+- 升级到 v26.7.11 后,客户端连不上,服务端 0 字节无日志活动,连接被回落到 REALITY 的真实 dest
+- 降级回 v26.6.27,不改任何配置,立刻恢复正常
+
+**原因**:这是 xray-core 自身在 v26.7.11 引入的回归问题,和面板配置无关——凡是用 XHTTP 传输层搭配 REALITY 的节点都会中招。
+
+临时解决方案:
+
+- 在 3x-ui 面板的"Xray 版本管理"里,把内核手动切换回 **v26.6.27**,其余配置不用动
+- 如果必须用 v26.7.11(比如依赖它的其他新特性),暂时把该入站的传输层从 XHTTP 换成 TCP/gRPC 等其他方式规避
+
+---
+
+## 六、v26.7.11 内核与多种 REALITY 客户端普遍不兼容
+
+对应 issue:[XTLS/Xray-core #6477](https://github.com/XTLS/Xray-core/issues/6477)、[XTLS/Xray-core #6048](https://github.com/XTLS/Xray-core/issues/6048)
+
+和第四条一样,这也是**内核级的普遍性回归**,不局限于某一种客户端。
+
+**触发条件**:服务端内核从 v26.6.27 升级到 v26.7.11 后,客户端使用 mihomo(1.19.28 版本测试)连接任意 REALITY 节点。
+
+**症状**:
+
+- 所有 REALITY 节点全部连接失败,不限于某个特定入站或订阅方式
+- 换回 v26.6.27 内核后,mihomo 客户端立刻恢复正常
+
+**原因**:这个问题比第二节的订阅生成 bug 范围更广——不只是 3x-ui 面板生成的 Clash 订阅有问题,而是 v26.7.11 内核本身与 mihomo 的 REALITY 握手实现存在协议层不兼容。哪怕手动填参数、不走订阅,一样连不上。
+
+**补充案例(#6048)**:更麻烦的是,"换客户端"并不总能规避这个问题。另有报告显示,即使换成原生 Xray-core 系客户端(HAPP、INCY、原生 Xray-core 本身),RAW/TCP REALITY Vision 和 XHTTP REALITY 也会出现类似的 `failed to read client hello` / `authentication failed or validation criteria not met` 报错,连接不稳定或直接不可用,反倒是 mihomo 客户端在这个报告里连接稳定——说明这轮兼容性问题比较复杂,并非单纯的"服务端太新、客户端太老"能一概而论,不建议指望靠换客户端解决,直接从内核层面降级更可靠。
+
+临时解决方案:
+
+- 不管用什么客户端,服务端内核暂时锁定在 **v26.6.27**,不要跟着面板默认设置升级到 v26.7.11
+- 如果暂时无法降级,连接异常时可以多试几种客户端(v2rayN、mihomo、原生 Xray)交叉验证,但不要预设某一种一定能绕开
+
+---
+
+## 七、从 v2.9.4 等老版本升级后,部分客户端无法编辑(tgId 字段类型冲突)
+
+对应 issue:[MHSanaei/3x-ui #5934](https://github.com/MHSanaei/3x-ui/issues/5934)
+
+**触发条件**:早期版本(如 2.9.4)创建的客户端,其 `tgId` 字段以**空字符串** `""` 形式存入数据库,之后升级到 v3.5.0。
+
+**症状**:
+
+- 打开这些老客户端并尝试保存修改,报错:`json: cannot unmarshal string into Go struct field Client.tgId of type int64`
+- 即使表单里没手动改 tgId,或显式传 `tgId=0`,依然保存失败
+- 新建的客户端不受影响,只影响升级前遗留下来的老数据
+
+**原因**:新版本把 `tgId` 字段类型从字符串改成了 `int64`,但数据库迁移脚本没有处理历史遗留的空字符串数据,导致老记录和新代码的类型对不上。
+
+临时解决方案:
+
+- 受影响的客户端,**不要在面板里直接编辑保存**,否则会一直报错
+- 如果必须改配置,可以直接连数据库,把该客户端的 `tgId` 字段从 `""` 手动更新为 `0`(操作前务必先备份数据库)
+- 不熟悉数据库操作的,建议等待官方修复,暂时保持这些老客户端不动
+
+---
+
+## 八、快速自检表
+
+| 症状 | 大概率是哪个问题 | 快速验证方法 |
+| --- | --- | --- |
+| REALITY 握手失败,dest 用的是 microsoft.com | Xray-core #6356(REALITY 库长期存在的证书长度限制,非新回归) | 开 `show: true` 看日志里证书记录长度是否 &gt; 8192 |
+| 用 Clash/Mihomo 订阅连 REALITY 节点报 "authentication failed",换 v2rayN 能连 | 3x-ui #5957,订阅生成字段不同步 | 对比订阅客户端 vs 手动填参数的连接结果 |
+| 老版本(≤v3.4.2)节点突然全灭,面板显示核心未运行 | 3x-ui #5861,fragment + REALITY 崩溃(v3.5.0 已修复,面板会直接拒绝该组合) | 检查该入站传输设置里是否同时开了 REALITY 和 Final Mask 的 fragment 分片;升级到 v3.5.0 后此项不再需要担心 |
+| 出站(级联/穿透)连不上,日志提示 "vless without TLS..." | 3x-ui #5916,面板误拒 | 检查该出站是否是无 TLS 的 VLESS |
+| XHTTP+REALITY 节点突然连不上,近期没动过配置 | Xray-core #6482,v26.7.11 内核级回归 | 查看当前内核版本是否为 v26.7.11,降级到 v26.6.27 测试 |
+| REALITY 节点全部连接不稳定/失败,换客户端也未必有效 | Xray-core #6477 / #6048,v26.7.11 内核级回归,影响面不止 mihomo | 直接把内核降级到 v26.6.27 测试,而不是先花时间换客户端排查 |
+| 老客户端(2.9.4 等版本迁移过来)编辑保存报 tgId 类型错误 | 3x-ui #5934,字段类型迁移遗漏 | 只在编辑升级前遗留的老客户端时出现,新建客户端正常 |
+
+---
+
+## 八、如果决定整体降级到 v3.4.2
+
+如果你踩的坑比较多、想直接回退版本,注意 **v3.5.0 做过数据库结构变更**(MTProto 迁移、流量计数器修复、端口 UNIQUE 约束调整等),不能简单覆盖安装了事,建议按以下顺序操作:
+
+1. **备份数据库**:`cp /etc/x-ui/x-ui.db /etc/x-ui/x-ui.db.bak.$(date +%F)`
+2. **面板内导出一份配置**(设置 → 备份/导出),不要只依赖数据库文件本身
+3. 停止服务:`systemctl stop x-ui`
+4. 安装指定版本: `bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) v3.4.2`
+5. 启动后检查面板和节点是否正常。如果因为 schema 不兼容导致启动异常,删除/移走 `x-ui.db`,让 3.4.2 生成新库,再用第 2 步导出的 JSON 配置手动导入回去
+
+提醒:降级到 v3.4.2 会连带把内置 xray-core 换回旧版本,第五、六条内核级回归自然也不存在了,但同时会失去 v3.5.0 的新特性(MTProto 多客户端、Final Mask+REALITY 组合拦截等)。如果只是想规避第五、六条问题,更推荐**只降级 xray-core、保留 v3.5.0 面板**(见对应章节的解决方案),没必要整体回退。
+
+---
+
+## 结语
+
+以上问题目前(除第三条已在 v3.5.0 修复外)都还是官方仓库里的 open issue,没有正式修复版本。如果你的场景没有踩中第一、二、四、七条对应的特定组合——比如就是普通 VLESS+REALITY 入站、dest 不是 microsoft.com、客户端不用原生订阅——那这几条基本不用担心。但**第五、六条是 xray-core v26.7.11 内核本身的普遍性回归,只要用 REALITY 就有踩坑风险**,不建议心存侥幸,更建议默认就把内核降级到 v26.6.27,面板保留 v3.5.0 即可,等官方发布 patch 后再考虑升回最新内核。建议持续关注对应 issue 链接,留意后续修复进展。
+
+**参考链接:**
+
+- [3x-ui v3.5.0 Release Notes](https://github.com/MHSanaei/3x-ui/releases/tag/v3.5.0)
+- [XTLS/Xray-core Issue #6356 - microsoft.com REALITY dest fails(证书记录超 8192 字节限制)](https://github.com/XTLS/Xray-core/issues/6356)
+- [3x-ui Issue #5957 - REALITY subscription auth failed in Mihomo](https://github.com/MHSanaei/3x-ui/issues/5957)
+- [3x-ui Issue #5861 - Final Mask + REALITY crashes Xray-core(已在 v3.5.0 修复)](https://github.com/MHSanaei/3x-ui/issues/5861)
+- [3x-ui Issue #5916 - VLESS outbound without TLS rejected](https://github.com/MHSanaei/3x-ui/issues/5916)
+- [XTLS/Xray-core Issue #6482 - XHTTP+REALITY breaks on v26.7.11](https://github.com/XTLS/Xray-core/issues/6482)
+- [XTLS/Xray-core Issue #6477 - v26.7.11 incompatible with mihomo REALITY](https://github.com/XTLS/Xray-core/issues/6477)
+- [XTLS/Xray-core Issue #6048 - RAW/XHTTP REALITY unstable in Xray-based clients on v26.7.11](https://github.com/XTLS/Xray-core/issues/6048)
+- [3x-ui Issue #5934 - tgId type mismatch after upgrade from 2.9.4](https://github.com/MHSanaei/3x-ui/issues/5934)
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-07-27，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[3x-ui v3.5.0 节点连接失败？七个已知 Bug 及临时解决方案汇总](https://www.zoio.net/2026/07/3x-ui-v350-bug.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>

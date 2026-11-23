@@ -1,0 +1,173 @@
+---
+title: "CFNext 订阅管理器：最新 Cloudflare Workers 免费节点项目"
+description: "CFNext：最新 Cloudflare Workers 免费节点项目，在 Cloudflare Workers / Pages 的代理订阅管理面板中部署，单文件同时实现 VLESS / Trojan / XHTTP 多协议代理与图形化配置：/UUID（或自定义路径）进入面板，/…"
+sidebar:
+  order: 2
+  label: "CFNext 订阅管理器"
+---
+
+CFNext：最新 Cloudflare Workers 免费节点项目，在 Cloudflare Workers / Pages 的代理订阅管理面板中部署，单文件同时实现 VLESS / Trojan / XHTTP 多协议代理与图形化配置：/UUID（或自定义路径）进入面板，/sub输出订阅；内置节点优选器、节点数量控制、轮询下发、ECH 加密、落地与出站代理及地区 / 运营商 / IP 版本多维筛选，部署即用，绑定 KV 后改完成即生效。
+
+**CFNext 项目地址**：[https://github.com/netrair/netra-panel](https://github.com/PAICNI/CFNext)
+
+**CFNext 主要功能**
+
+- 运行于 Cloudflare Workers — 无需 VPS、无需 Docker，省去维护和重启服务器的繁琐。
+- 多协议支持：VLESS / Trojan / XHTTP 三协议独立开关，可同时启用；Trojan 密码留空默认使用 UUID。
+- 订阅模式：关闭（默认）/ 自定义订阅（支持汇聚）/ 随机优选模式（官方接口）三种模式切换
+- 节点数量控制：下拉开关 + 数量输入，开启后精确控制下发节点总数（1-1000）
+- 轮询机制：默认开启：Clash 上限 300 / V2rayN 上限 800，更新订阅覆盖旧节点；关闭后忽略限制一次下发全部
+- 优选器：内置微测网 IPv4/IPv6、优选 IP 列表、HostMonit 优选、微测优选域名 + 自定义数据源 URL；在线 TCP 测速后「加入优选」随订阅下发
+- 自定义订阅：内置 6 条在线源（bestcf 地区源，可增删），支持域名 / 优选 API / IP 逐行汇聚；可切换「仅自定义节点」——关闭后只下发输入框内内容
+- 地区与筛选：地区选择（全部 / 香港 / 台湾 / 美国 / 新加坡 / 日本 / 韩国 / 德国）+ IP 版本（IPv4 / IPv6）+ 运营商（移动 / 联通 / 电信）组合筛选
+- 落地与出站：反代 / 落地 IP（留空使用内置 VLESS 中继 + 地区反代兜底；填写后启用透明代理）+ 出站代理（SOCKS5 / HTTP，user:pass@host:port）+ 出站模式选择
+- ECH 加密：自定义 ECH 域名 / ECH DNS（DoH），开启后自动进入仅 TLS 节点模式
+- 多客户端：Clash / Sing-box / Surge / Loon / Quantumult X / V2ray / Shadowrocket / Nekoray / Stash，按 UA 自动识别（URL 追加 ?format= 可强制指定）
+- ...
+
+---
+
+## 准备工作
+
+- **Cloudflare 账号**：[Cloudflare 官网](https://dash.cloudflare.com/login)（建议新注册一个账号单独部署）
+- **自定义域名一个**(可选但建议)：可参考 [注册 INDEVS.in 永久免费二级域名](https://www.zoio.net/2026/02/free-indevs-in-domain.html)
+
+![登录 Cloudflare](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjKBJBGPyKaPW8qpqNMFe1_0PlThV4bWZ6FRBpSP6sDkw6xGQhtXKTWD-BcgXSwXIO7mdw_55GFS8MdQYgOVIZJEiUKJPzyXwNv12GCor7ZJG_FJ5U5b0_BpG4XKxjWVFqC8Pv4pt1F6tzLmbUKpDDbB1JRg4L0pwPw0fY_kw4bpKCKRDN73e_g15fCmXg/s1600/netra-panel-1.webp)
+
+**安全提示**：使用 Workers 部署代理协议的行为存在触发 Cloudflare 审查的风险，**强烈建议新注册一个 Cloudflare 账号**专门用于此用途，避免波及主力账号。
+
+---
+
+## 部署教程
+
+### 把域名托管到 Cloudflare
+
+虽然 Cloudflare 提供了默认域名，但由于众所周知的原因无法在大陆直连。建议绑定自己的域名并开启 CDN。你可以使用[免费域名](https://www.zoio.net/2026/02/free-indevs-in-domain.html)，并参考教程将[域名托管到 Cloudflare](https://www.zoio.net/2026/01/cloudflare.html)。
+
+---
+
+### 创建 Workers KV
+
+登录 Cloudflare，在左侧菜单栏选择「存储和数据库」-「Workers KV」，点击右上角的「Create Instance」创建 KV 空间。
+
+![创建 Workers KV](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgaWflS0LzYsdsqCTptt6WCR8NsX5MMBJQiObLZbRf_SB7C0Tj6xEzoAYLAx8xUIVZcsNh06S3qGQcQamDGBIRty737PSVS3bEHSIxGjz8HufD8BGxSJ38KzFM_lOWUbzxm0j737gPDElqMBIZiXWpx3vd9U0k3QH-CO10Cjc7W3RkALMtOr5UhAG8ZvIk/s1600/netra-panel-2.webp)
+
+在命名空间名称中填写自定义的 KV 空间名，点击创建。
+
+![自定义 Workers KV 空间名](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg1ty3GTTHpCdhyphenhypheniAdOe0VkkwRvGrRbaOlWW_8GtF_OrIBQtKwnOrb3XrKLP43shD9y3GD60oIl5yPfi2wsyjT3Opt-2nkMJKw-QX2ef0Fd7nJt8vsWIl0QQgvgX4FCJvgo0xuTt0KlkoO0r16m1IO1y7qbcPVIrzWEqhilkEREfsy9Q7XQ34VN9zJkhwY/s1600/netra-panel-3.webp)
+
+---
+
+### 创建 Workers
+
+登录 Cloudflare，在「计算和 AI」菜单选择「Workers 和 Pages」，点击右上角的「创建应用程序」。
+
+![创建 Workers](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiIEpCxKkkeB9SlX9QMjdsyvCfCC1PY6We7_T3wh7HanL-gWjm3JOuF0HFcjR80E-unu4QiIk7VIeKTfy77uokphGQNEEHZeIYrJbOXRSaklyiEIzpec3CJNFaj-Aoi-2wmCXJR76_GMuY5YW2pM3CBpHX1HA7z2GbQ6o-z5Osic5X1bzoW3HqRnm3Pt2k/s1600/netra-panel-4.webp)
+
+点击选择「从 Hello World! 开始」。
+
+![创建 Workers](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiu1yBXWalSPP6k2vzdCs0QjodjCOrngXtrpkvkWCgQMn2RmbsFS1h4lmAx6b-wA8iaZC0d0sAZef6FdU-B9EKlxwue5ZXIklfHC0bvMa9c5WCQMUWw5uKECdGoF6ALaMMa6H-fUF-3nDnZBsIhgou0m57fQEOAP2ObIAzzRpiiKlH9kHDB36otUdztb58/s1600/netra-panel-5.webp)
+
+Worker 名称可随便输入（作为默认域名前缀），然后点击「部署」。
+
+![部署 Workers](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh-Yd7rvzasP9zmVpRjGNw33BRW4b7oesoqmzOOwGSKuI7Op94dIPFGjjwsQwZwoWyLcMh0d_ghz-14LcYvTzYSwAGTqLG2XoDU0m2afrInj8WFDGy42m0QJ-fgUo0VgN7xzEfOaeMkSID8XE_LXacibDcWtajPaLdjIJHUh46zmwGYSvC1eentCB_FX0A/s1600/netra-panel-6.webp)
+
+---
+
+### 部署 CFNext 代码
+
+打开 CFNext 的项目代码页面：[https://github.com/PAICNI/CFNext/blob/CFNext 混淆版.js](https://github.com/PAICNI/CFNext/blob/929ceeb9a879a121c3c95c430f72686746794079/CFNext%20%E6%B7%B7%E6%B7%86%E7%89%88.js) ，点击右上角的「复制」图标，复制全部项目代码。
+
+![复制 Netra Panel 项目代码](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiIY9c8ifY2Y43Uz1aSnYGpXlI81aaYWkXC3zd_hMC8BRFy3i113NtxrszCW8i1eqnc60U02OSLnD2XoegYNqwUcqSknuR2t-1n2ZVrRruQdNl2N1TB_9AxPxk3F2K5A6AXDQK_y46SHzjShBLdOTL63W2wNAjGSJ0kVT7LXRYpnT_eEtDVQ7T5kIC6t7E/s1600/cfnext-1.webp)
+
+回到 Cloudflare Workers 管理后台，点击右上角的「编辑代码」。
+
+![Cloudflare Workers 编辑代码](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj-VECY22TXB8oeY_cC3JT-OwE8QYaCslOz1-nlvR3P6n67JlPt5oo5CeQAu1XUBYnXAe-1eZUvP5C3osVult6bED_cW4NENgN1JnQeZ8lVbEVwXF9KJHYqJ_YFFoN1Nnhu_azmPoOTVwMvYBrya9eaAp8SQdVS2p1YLNH0lhrb05b3uRlbVh1qvhHNYK4/s1600/netra-panel-8.webp)
+
+**清空**原有代码，将复制的 CFNext 项目代码粘贴到代码区域，然后点击右上角的「部署」。
+
+![Netra Panel 项目代码部署](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEio0Q7w3aA6D1VfKour991m5H2e7-yJVbVyHLlfx2z-9kcE1VboykvVXhHFb0OJx08FcB6fFypDhUJdJikC0OIg0noErtxfzYY92Vmn1hFF2VNgdyPmgM0PeGV_skX5_rZl6ogos619viUfmoI2AS06Z1eXUz61TR2y5brtf5NBYn4a9sRZz5ngdTwEDwc/s1600/cfnext-2.webp)
+
+---
+
+### 添加变量
+
+在 Worker 的「设置」 - 「添加变量」。
+
+![添加变量](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg1GzVeEGTnWfTfDhIyoq-NB5K3gq7uFkuYUjEOOD1xoT2Yi23n-K8UHGcHmY23Kz44bP33hcY9valWy71PuqWQm3bxl855MOjpsxbea_DQPbDl0uW9z8HuX8JntNauV3FALFuItZGMnmt-zi3kqrpfXqin7SsjSZ3TVsQ4oHZECRcSlspCOlbLTBgIG2Y/s1600/cfnext-3.webp)
+
+添加环境变量
+
+![添加环境变量](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhtTOMM3cRDpDfBwYnfMmyj4Ac6P7xKXrN5OLqe1BNuvyTuYG5Q6a8UbPs3tCwt7wGkBSu0Y931y0WQEHLrqHcZls0d9akHQezJHEMI8P8ze2fPhKkSEVD-JXlBmguYFcCycW5H3pJ8FjfUOT_62fVzb6CkkcIHaoQzTQ1K3adW18UuKaovknoBjmWLEKY/s1600/cfnext-4.webp)
+
+- 秘钥：填写大写字母 `U`
+- 值：你的 UUID （[UUID 在线生成](https://www.zoio.net/p/uuid.html)）
+
+---
+
+### 绑定 KV 空间
+
+在 Worker 的「设置」 - 「变量和绑定」标签页中，找到 KV 命名空间绑定并点击「添加绑定」。
+
+![添加绑定](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiRI9WrgCHJQo-4VhIS-U-1L5En0fTtCpPLSIkFjdN3jR4PcjwgPxUCwmjGjhie8m_DtawtDarlzMdSTy86tA-3dkVDbL9jqds7pCLuFJoQNQxYK1JGtfttSmXWeQAjI2I92_9BfOjPUe8rsnltj4d5HeBudQ4CbI8Z6uR-_GLEhrCIYz5glpmnsbEegSg/s1600/netra-panel-10.webp)
+
+选择「KV 命名空间」，点击「添加绑定」：
+
+![绑定 KV 命名空间](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh47_iIKB2I2p_wP_NG6GzLpht5W84t5qKNZPwQFGcB7IUUSYn-b7ciAEgyR9KLC_siJB3yT3UkgA0L9WmAeBsHjloeEClbhokODGePPla49qKG8cgARGoCMkge2Y9h5pUqbDmGO5ILA94UZ8uuwzHSIV7QS_FoGq6iPnIiYj3skdsrayr4PPOqHyhamJU/s1600/netra-panel-11.webp)
+
+- 变量名称：填写大写字母 `K`
+- KV 命名空间：选择刚刚创建好的 Workers KV
+
+![绑定 KV 命名空间](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEicxjdc2bsbAMG1bGRDrIcjgMcjsWRh2mQr_eiwnWh3nr3ILa3ah9VYBFb5vIpDtDOkPc_vYhEg1crtrj9z3VLHnQdboFDdx5fTaPGLNzDMxf2RE9LyRFpDG2m2KVJWc_6a16nd_Ip-Fvr23PYv6dP_6cO8Etuwk5bnbHEq3gHhGkmHZUNegpbfyuuRWUw/s1600/cfnext-10.webp)
+
+---
+
+### 添加自定义域
+
+Cloudflare 官方分配给 Workers 的默认二级域名（以 `*.workers.dev` 结尾）在中国大陆已被全面阻断,下发的节点 SNI 取自访问域名，会导致客户端真连接延时全部 -1。为了正常使用，建议绑定一个自定义域名。
+
+在 Worker 设置中选择「域和路由」标签页，点击「添加自定义域」。
+
+![设置自定义域](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgUdSjjR2y3lb79W2Z2eJXHay_jZ2rNkUjxXYj_Hzec1nUmJoSptHhApMj_OunemNpKDUR1psB7btNHNULzjLkZ4ryTPbyyJIk_lRbaGKSz4GAjSYY35_2NmMi6zCRQvlYi_Jft0-eg6l_4ZxuJ5ZdC41vdQNyU7U0RGNlziuUjke5vAIo14MujuS8xC04/s1600/netra-panel-13.webp)
+
+输入你托管在 Cloudflare 上的子域名，然后点击「添加域」。
+
+![设置自定义域](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhnyON3VKFSMZDJ5UV4xPuhqgnRFp8_9Cry1bdFCi5cqGhb9Nomlgqvu81oFwWZY3M7ZN6jnrgHShqwJaN5EcY2IzDTm5bckui3mmSOVRwAFPsW9BtWAjBnee8mjtf51L5nbG8a4DEMKW18Cn3Z7L0gKab7KW_wbdalS8A6ZGrNfjWX7Dxmd11o3jn2kPI/s1600/cfnext-5.webp)
+
+---
+
+### CFNext 面板配置
+
+打开你的 Worker 访问地址（或绑定的自定义域名），在网址末尾加上 `/你的 UUID`（例如 `https://your-domain.com/b6ac4304-8f5a-407b-bcbf-5e18ddb0abb1`）以打开管理后台。
+
+![CFNext 面板](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiDwD23EF4DLDJluiE6YUoJwo6KNLHx1cgrsOTviWaFlkOEtBINtTENed3Qp7sUfG3Y9qVOjCqtDmutz2sRd534HqDp7Q_pQFXwg-oqhOOMehYsRZcZdRLkirNCNmLUT8KRmmzQL24W4cjKHp9BT1ECwYbgKmU-0IP2Cu6nqVdYNd4Bxr95lcUAAJyG9Cg/s1600/cfnext-6.webp)
+
+在「订阅地址」订阅链接。
+
+![CFNext 订阅链接](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgB0QIa_mWZMta88H0GDh-itHp34P9o1mjIo_2P6QEzH6XWw6gIDHbvZyqgT-VIURyKiZ5VaktMonIye2ePDNYDGprKQ1pOXohuZdZEtgkrFiVF5KpTcwqjRZJMPIW2voe5HDMDI3wyQ1gMqzKCI-0E0g9Olp9tvIFx-rUDU85m-nBg7mTbFUNI2nuuMpY/s1600/cfnext-7.webp)
+
+其他详细配置请根据自己需求自行研究。
+
+---
+
+## 在 V2rayN 中配置节点（示例）
+
+打开 V2rayN 添加订阅，详细的 V2rayN 使用教程可参考[V2rayN使用教程](https://www.zoio.net/2026/01/v2rayn.html)。
+
+![V2rayN 添加订阅](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgyFdQP20EuTq7yuiaYdeougmB3Nvcf62zJsuF1C4ZUN5GcCviQbkQ_2SxH3nWrkccHbLVVMAHmW4yTSPDHwUmuKPuKVUtJ3bdy4ssdPmqQUjVMiWy346rpkfMTScfYZ7B5U3wyJaXnPpRKtSh7QpjoKBjmA8V_d-LRo7CPRj-FSu7RjIszB_Iaco_LJBg/s1600/cfnext-8.webp)
+
+添加后更新当前订阅。开启「自动配置系统代理」，即可正常使用。
+
+![V2rayN 更新当前订阅](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh3wySSsBidgWQIzHLY94M8G8KC7ct_XQO6aDnS9xHPDn9plkE2qKxHWijt2VjMup3CYEFxGiXax49xkgO2_u86oYhXiwAK3vyFz60rdWue9kX-v8PcBKCqm1XlegKk8R7YdDQZLmPcz5WqXbHkljix3nb-TfRH3_HxNPR_Ev4r9ODVJnRsZKKSdBmIY4A/s1600/cfnext-9.webp)
+
+**相关推荐:**
+
+- [Netra Panel 基于Cloudflare Workers 的免费 VLESS/Trojan 节点代理面板](/protocols/netra-panel/)
+- [CFnew - 终端 通过 Cloudflare Pages 部署免费科学上网节点](/protocols/cfnew/)
+- [通过 Cloudflare Pages 部署 edgetunnel 创建免费科学上网节点](/protocols/edgetunnel/)
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-09-19，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[CFNext 订阅管理器：最新 Cloudflare Workers 免费节点项目](https://www.zoio.net/2026/09/cfnext.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>
