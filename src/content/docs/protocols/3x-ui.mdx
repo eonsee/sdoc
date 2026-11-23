@@ -47,15 +47,15 @@ sidebar:
 
 打开 [Finalshell](https://www.hostbuf.com/) ，通过 SSH 链接 VPS 。
 
-![通过SSH登录VPS](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh_gSDcRlWiTNg9NBpZ_TKJNUtedJrMWHp2ZHwYcNP0KGr8Pxwi0Q7MXVPyAcfqZ96wsdRDkG9ge_P9D4JtIlb6TB8C8sRaT8r7H-iyzgK65gcb62WdzEUZTqxVgYK4KHuGE2mzuLtMIxB5vOk3K07F94pVzmbDskLzgwNxOyDZeAQW1gWenAS7XY6mbac/s1600/finalshell-1.webp)
+![通过SSH登录VPS](/images/protocols/finalshell-1-e6be0ef000.png)
 
 双击刚添加的VPS，登录SSH。
 
-![通过SSH登录VPS](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiGfiBT_F__FB2BTYDXmvsMJ0f1RsJMfsW8moc_O0vrMv7S9VICUKH1WENm06RS-0Ws1uug3QX7TF3lAy7jVjPbhIfiN6-2wnTwwTRvdm7ysJeABnHc3vwBcbnvmrhxJkG1TsdcEcQ0TrPxVHMYL7ZB6svppqZGt48OLMpic5PJIeyy2KDipISlVb8XaN4/s1600/finalshell-2.webp)
+![通过SSH登录VPS](/images/protocols/finalshell-2-d119f06113.png)
 
 在弹出的安全警告提示框内点击 **接受并保存**。
 
-![通过SSH登录VPS](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjJE0I5YGIl4yr-shQUjzLjFDPZlPhlTEt3z4fZlcrrp_PQ_OqowWFHjMxv8sJCYCZIpH91saUFeaZTsZuH1WZdYO-6TD1veLqQygHOkgrkaKbQZ_UBcYHwyXl8eh3fxLNwfVGsRWWl_Z9mVAXgywvptU0sLJzS8KslyVE47kIv5rRSNHJ1lU44lb8ZSGo/s1600/finalshell-3.webp)
+![通过SSH登录VPS](/images/protocols/finalshell-3-5cf462131a.jpg)
 
 登录完成。
 
@@ -79,23 +79,23 @@ sudo apt install curl                    安装 curl
 bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 ```
 
-![安装3x-ui](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiODRFBGxiRSAWrmMPrXH0c4kHtGh7J_dyLS5MpmhyphenhyphenBbvyHbiYOprMDa9BOs9e5ewluXw-vXERIJDKml9sOkuRz6Olv3Mul0eYnISw3bvebf7cBXfbBV0FmqMhuVrWXxX-JoUZ3uby8g4qI0TV_ejlOIXRxi5GJRXZgHVJaIXCrKJ-ioLtQSC7xXxezIOA/s1600/3x-ui-1.webp)
+![安装3x-ui](/images/protocols/3x-ui-1-a123b0e8e3.jpg)
 
 提示“**Would you like to customize the Panel Port settings? (If not, a random port will be applied) [y/n]**: ”询问我们是否要自定义面板端口设置？我们回复 “`y`”。
 
 然后自定义端口，如果你没有域名，或者不使用 Cloudflare ,自定义端口随意设置。如果你后期使用 Cloudflare 代理，端口请设置为 Cloudflare支持的HTTPS端口： `2053`、`2083`、`2087`、`2096`、`8443`、例如8443 ，回车。
 
-![3x-ui 自定义面板端口设置](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjaqOvl7pOEoownsWeq71IPstINCCl1iA62mYAGLZRGTy6f93MYc0moh5dQn4W3_OIOnu0goSZgmcIq5et3IzeYn1O_jaD0E02llqQcECez29lTIPtz4X62P5EL-fbOE-A5SNQk_cRZtJHgoYHvTBAO5C47dGecUdHP6jRaW7reZXQcnKPrteW2PukO33E/s1600/3x-ui-2.webp)
+![3x-ui 自定义面板端口设置](/images/protocols/3x-ui-2-3a068208ab.jpg)
 
 3x-ui 更新后，出于安全考虑，所有面板都需要 SSL 证书。安装过程中会给出选项选择 域名证书 或者 IP证书。 <br />1. Let's Encrypt 域名证书（90 天有效期，自动续订） <br />2. Let's Encrypt IP 地址证书（6 天有效期，自动续订） <br />3. 自定义 SSL 证书（现有文件的路径） <br />如果是为了搭建 REALITY 协议（不需要域名），则选 IP 证书；如果要搭配 Cloudflare/域名，则选域名证书。
 
 这里我选择 `2` IP 地址证书，域名证书我们安装完成后可以再次申请。是否要包含 IPv6 地址这里我们直接回车跳过，用于 ACME HTTP-01 监听器的端口,我们保持 默认80端口，直接回车。
 
-![3x-ui SSL 证书](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEikbd8CJIQx7G9E00nF0QDoci3Bo4aqEr8oR8FCiYaCHT-ApJyHftmoKg77MpFLdnQ5Aq5hnIPire0d3CH1QPuazxhk3B0mpqZdMIUAaszdgGoHvJmV1ofKantG6Vp4XzO63yPngJtdvWMwev2-siVovpUEt2B3iUVLyTWBoWBYm7kzhOddiLQAcdZKyQA/s1600/3x-ui-3.webp)
+![3x-ui SSL 证书](/images/protocols/3x-ui-3-c0ba4292bd.jpg)
 
 安装成功后，绿色文字包含**用户名**，**密码**，**端口**，**管理地址**等信息。这里需要记录下来。
 
-![3x-ui 安装成功](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhY1xAs95hvBlRY_iqNlLjsP0AKGbStomQnO8vn94HvmPyf3YQTsTF97JjOOA25xscVKN13oaZcy1YUByNaEPq3u-i4abZxd80x1tngndxod0KYyibDPSx071yF9y8Jcj_cRXiNimuiTCx8mpSEo2vaVPOD6vvczLpH9GF32o6wMFPBG3iXIJgCWOT_82M/s1600/3x-ui-4.webp)
+![3x-ui 安装成功](/images/protocols/3x-ui-4-253b2022a5.jpg)
 
 这里获取的账号密码登信息，一定要记住！我们绑定域名并申请完SSL证书，也要使用这里获取的账号密码信息。
 
@@ -107,27 +107,27 @@ bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.
 
 输入 `x-ui` 调出面板管理脚本，使用脚本内置 SSL 证书申请功能申请 SSL 证书
 
-![3x-ui 管理脚本](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEixrlzg7njvMj6DNiaqGnESjd7dB_lMOorato1GZKzbPOybePeRutEyCxFZBKmooNDsjtDJKO72OYPtrQD3E0sBRYqMABJ-A0jgHvL-5wS2wzG5__rSdnoIVo-nfM2RcwoDdgzSXpiQb0o1V4E81xF1f4gR-Myx8aOFoFpajRxKUgZszBSmT2ROzK9GBRY/s1600/3x-ui-5.webp)
+![3x-ui 管理脚本](/images/protocols/3x-ui-5-d243849886.jpg)
 
 选择 18 **SSL Certificate Management**然后再选择 1 **Get SSL**。输入解析好的域名回车，端口默认 80 直接回车即可。
 
-![3x-ui 申请域名SSL证书](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh3Tv1BcgMYOmdS0LnpEIoMNkhVRRkbuk2hZ00Ezr5PWoW-wnmRxbdOgzRcD92W_nUdqo-i0jv8nzgT5ARnpq8MDhs2iVa4TqyPEUo1R9Rrm8UAuJzdVCqhFfhTXSTlmoeCWeeNoxmJqYEex4EPgvvSy5e78Eyqm5IlEvNBc8h8Ksn9_4DlF26dGUNnAJM/s1600/3x-ui-6.webp)
+![3x-ui 申请域名SSL证书](/images/protocols/3x-ui-6-d20b9a7b17.jpg)
 
 在 **Would you like to modify --reloadcmd for ACME? (y/n)**: 后输入 **y** ,选择 **0** 默认即可。
 
-![3x-ui 申请域名SSL证书](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEi4ll0XNOo3EfaJXxhYbQk1Z0UsDDomOfi-eKBieB25K6CNFb34eP3V-pWLuPVOL0FZ_JFw-4RjRjWkhCoQHTQ4z1BsPm9HBh-1Eocbe1b_q6MWmL8zz6jV_705f9qJcfDm6RoYz8qkeZP57lW_8_GHF-TsvptirKZPRgtBmn-0p5ZiaYw7T5_ROW7EfPs/s1600/3x-ui-7.webp)
+![3x-ui 申请域名SSL证书](/images/protocols/3x-ui-7-58e957fbf7.jpg)
 
 在 **Would you like to set this certificate for the panel? (y/n)** 这里询问是否为面板设置此证书，我们输入 **y** 回车。
 
-![3x-ui 面板设置此证书](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEggnAm1m-KQnWSuukb1jmW2uKYACCd3oKO-aBb0JimYi4PK0c2XvdzN2Qgp7BHwJ-_qgA7VTfxQIO5cHuFptAQnCE2oCgoVQnY75rGRRzmn63LtPIMuM5h8uIsvM28xGkwdPncohupx22X2L1OFOJM9rQCJ_DN9sUzp_H_CAevcduixmgY9DYWHlq3jQ48/s1600/3x-ui-8.webp)
+![3x-ui 面板设置此证书](/images/protocols/3x-ui-8-97683d4418.jpg)
 
 输入0退出菜单，选择 23 **Enable BBR** 然后再选择 1 **Enable BBR** 开启BBR
 
-![3x-ui 面板设置此证书](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj9lCAVgCPUQIFlG1xPwWh7WgY0Z-avMBSrFho53Bc0gpIGTf2SvtFkbO0T6ss_AhkXEHKE5AVfQhw6Tm3smHdKx9owPcVYBGyyNShkUrniQrl1CXEp9A92oPY3aPf0c-43jcPmKeU98Abwub81gQnowJrR5Gw6PmPzsCydoqZ25giZ7DCWzt5_-2vAY08/s1600/3x-ui-9.webp)
+![3x-ui 面板设置此证书](/images/protocols/3x-ui-9-c870ab473a.jpg)
 
 到这里，我们的 3x-ui 安装及 SSL 证书设置完成。我们通过 Access URL: 给出的面板管理地址登录面板。输入安装 3X-UI 时获取的账号密码即可登录面板。
 
-![3x-ui 安装成功](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiVuvYgMl1XajkDvprZB1hYrL2alJBJY2OdmgE8Sq9rRpMhllKcq-7BcPktwktVata2UdDLfbX_t5JDJ3Qa63eJVKvTW0-YIJrbXaU2VwA_aH9El79E5lx2pcRVmHA79hEjmAJbFIduokQMwvg-PBJBR1_yVd3yFFu6abtRpU-pCYLG99Lt9PrbtY16MeE/s1600/3x-ui-10.webp)
+![3x-ui 安装成功](/images/protocols/3x-ui-10-f4f4da5d44.png)
 
 ---
 
@@ -139,7 +139,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.
 
 修改完后一定要点击上方的，**保存** - **重启面板**
 
-![3x-ui 修改默认登录路径](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjQ7ZCpYuUTi9fKLqDp27vIurHoWCnXs9NxZcCcM5CyN_6ywtVGqqoKIkaqJ45a8rrvylNcOqTElsFGqVBNBIsA9ycpWoFVwZ_gBxbQZDbxm-UajelvSRME7_PtJhyphenhyphenXBoCpyOBCdw7qOcKG6KPMK-umZCGvEmFoNDYu8-J3plBytcorxPDrlp96GE2JVYo/s1600/3x-ui-11.webp)
+![3x-ui 修改默认登录路径](/images/protocols/3x-ui-11-0cb052a9cd.png)
 
 更改后，我们的登录地址将由原来的 `https://xui.zoio.net:8443/ij78rO6dljPCxU5tJc`/ 更改为 `https://xui.zoio.net:8443/zoio/`
 
@@ -149,7 +149,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.
 
 自动生成的账号密码太难记，我们可以修改默认的账号及密码，在后台选择 「面板设置」 - 「安全设定」 - 「管理员凭证」 修改默认账号密码。
 
-![3x-ui 修改默认账号密码](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiaEIG7yK42fjnYX9cUK36ntE-MC9c6o9FHHHFrJKfgaOFxCCvlYezR-K2qt7iBUjkF-DksHN4iafgcOU1FwwD3yA4OOEaM8HVDQO4Wab587lBdt7lbPD4F30ctllHrnd0TOAHqyQZk9sp-H895HbEwIkmkSqmHLneRCNb15-IG0nB2hLXoq3nyZCv-2sw/s1600/3x-ui-12.webp)
+![3x-ui 修改默认账号密码](/images/protocols/3x-ui-12-653c751b0c.png)
 
 ---
 
@@ -157,7 +157,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.
 
 在 「入站列表」 选择 「添加入站」。输入配置参数，点击添加。
 
-![3x-ui 添加入站列表](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEga6cI_kC3aY6E2EP9tsCl0ko0hvPpT6gvp6xeUSPr6t9Z8ARFSX0OETb3LUFdJbz0ohOyMwwEAo-0U38OdnNJoQbKx7ycnN1w0HSbRIm_PuB8FdkCnTZfpDTwdS0hRmxYQc2Lq_kMdAIgzC_MM0wIDKYLtaExI_7PNmuHnI2juC55CiM_XPv8kUPdEHmY/s1600/3x-ui-13.webp)
+![3x-ui 添加入站列表](/images/protocols/3x-ui-13-53706273ce.png)
 
 ---
 
@@ -178,13 +178,13 @@ REALITY 协议必须关闭 Cloudflare 的小云朵，否则节点无法连接；
 - **极佳的抗探测性**： 相比传统的 VMess+WS，REALITY 能更完美地模拟正常的浏览器流量。
 - **高性能**： 配合 XTLS-Vision 流控，它减少了 TLS-in-TLS 的双重加密开销，速度非常快。
 
-![VLESS + TCP + XTLS-Vision + REALITY](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgWElBA4Sss_LKFhP2c5NoqWV0ZO2DOyBw_HTjinK_cNmLUGW7iv0HthxZgQSrPf01PN5GosKGwoLTz8Ryh27kJnRPB_gRAX2JXiGKAwVieCjWJdL0Bdatk42rT8iE3s-YWxZw19bv48PGKrK7DBR5leORh4xMzOO8AUy35CraWi6uS6wRT27jwfBJugpc/s1600/3xui-reality-1.webp)
+![VLESS + TCP + XTLS-Vision + REALITY](/images/protocols/3xui-reality-1-069782d831.png)
 
-![VLESS + TCP + XTLS-Vision + REALITY](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjrFlCTusjnEppuwAtXTQU8ipbjws-mQBPmrC-zqkmAxklbi0Xy6rxQTGU_X_-9teGgFrwvAgoYxr3ZeeMsfD2LIpp9WgsoK7oHHzOMVzmpJQ9ZAQ68PATW0R8DPbkx3nxoWHfH9Ypsf5wkd0JXrg6YcFhTbySGEVrrV7i7FR0Cqt9MaP9ze4UEkHjDNEU/s1600/3xui-reality-2.webp)
+![VLESS + TCP + XTLS-Vision + REALITY](/images/protocols/3xui-reality-2-707840f730.png)
 
-![VLESS + TCP + XTLS-Vision + REALITY](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj5i9Sqp1QGtAeXafzNe_rsXW4qdcP3Oaata6PlNsOgzUVOTmJJcMBEtEfg86ue9a2saukBV8vxIs8xEK8s65gZVXmbrs6KUgGQNDRHoHlUMcMtFlCtW-3qJXfMCDBH7rTV1bBLUEJZjpNtyB28-26N9Mcn-RMd6HXjSjV8WbIowYryqou3Tfxas4W7gcA/s1600/3xui-reality-3.webp)
+![VLESS + TCP + XTLS-Vision + REALITY](/images/protocols/3xui-reality-3-7ba89b818a.jpg)
 
-![VLESS + TCP + XTLS-Vision + REALITY](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhTRZZoW7HtxjWdsFaEjCjS6TZAQl70Q-v2ONpt2Gu-_wbpBtMQE4myNoMu_YbXfJXViC0DdBSV8fZ3kU39O5WGT7Bn4ZZA-tQukBuEK5t7obB_M83LbF9pYfbPa4VvYjhMwAXLBgLgmj7YWu0yDPqGOZ4slKyWoUqW7wtufHJgBVD1_LcmzcokOYnvjgs/s1600/3xui-reality-4.webp)
+![VLESS + TCP + XTLS-Vision + REALITY](/images/protocols/3xui-reality-4-c5c64153d7.jpg)
 
 - **备注** 随便填，例如 US-LA
 - **协议** 选择 `vless`
@@ -219,11 +219,11 @@ Cloudflare 后台设置
 
 3x-ui 入站配置
 
-![VLESS + WebSocket (WS) + TLS](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgUs6fqThPftjOpuNIUYwB08BPsfhyphenhyphenYkPMhooyxEohoUYe2b1PQzZRN_ILZXdK0dBQovY2Ke_wOrXgSVXmr5uxi3yweYS90LdTMq8nU0WWPKtvxS9bBFUN_4a4cToyq_yGUgqs9iG_Xdys8fLSv1l27B8OpS83jjzSZc1K-X9vaJG7K8IBXKeH608EW6_o/s1600/3xui-reality-5.webp)
+![VLESS + WebSocket (WS) + TLS](/images/protocols/3xui-reality-5-591a885131.png)
 
-![VLESS + WebSocket (WS) + TLS](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjWaV0koQwaJTql0MzWpysKIGt5vqNCteGmHOS2tGP1tXRaP91y3H-cPCbGU5-EdPvoGNoz_DeRq0VvyEKpE5H4saHkjt_vamb3lXOeg5-OAcG42PvDKVIEemeMm84VzR1PB0dFbaTgvtmEZsBD6nV0PIKR4MmdxLaGTRudF48kwol-BKNCd1lZH-6aXI0/s1600/3xui-reality-6.webp)
+![VLESS + WebSocket (WS) + TLS](/images/protocols/3xui-reality-6-134355ca50.png)
 
-![VLESS + WebSocket (WS) + TLS](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjELuW_8cJX_P8mhRBg9VJnznie2ScuC6IYYoKYvjy8vUjlR-mfQzV3XZhhiao2Ya_IIxFhwtesIMuT5VJCqbdj65bF0Sjvw48ErKCB4vsjZjyHnf4NtRvU59bw6VkhbSKUfqR9_wiHHb2MMT_zpuq-82y2BCC_kOqPKkCr_YroYqMcKWjhQGT51sWvAow/s1600/3xui-reality-7.webp)
+![VLESS + WebSocket (WS) + TLS](/images/protocols/3xui-reality-7-d3e987042d.png)
 
 - **备注** 随便填，例如 US-LA
 - **协议** 选择 `vless`
@@ -239,7 +239,7 @@ Cloudflare 后台设置
 
 #### 两种方案对比
 
-![3x-ui 两种方案对比](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiCA5cuAzDtF36OpSEzHbx_deEXE3r-E_pg1D2JDnaTL-5ttTzgX5aiLUiX6mVulMILRz5AF2gGXNpQSLTCQPgkKlZEiPeiQhfEMuT8AjxxLd950_gZ20pOx0mge3oo2o7kuLB3laAdEfx6jYDeXWoyz-9wKi7-e3W5xEI5sZ-NTY2KC21TfJAU0ZTp7ic/s1600/3xui-reality-8.webp)
+![3x-ui 两种方案对比](/images/protocols/3xui-reality-8-cecf6b7aeb.jpg)
 
 | 特性 | REALITY 方案 | WS + TLS (CDN) 方案 |
 | --- | --- | --- |
@@ -256,11 +256,11 @@ Cloudflare 后台设置
 
 入站列表添加完成后，即可导入节点链接了，点击**三个点**菜单，选择**导出链接**，**复制链接地址**，然后再各个客户端里使用了。使用教程：[Windows 、Android 、IOS、macOS 全平台科学上网工具 APP客户端下载及使用教程](https://www.zoio.net/2026/01/proxy-clients.html)!
 
-![3x-ui 添加入站列表](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh4fRhbp9sGTfzNMQ1OWdzOOjpIQzIYkeU7m3qN18LIaOmnX1arWBWeLW-_QgX5QRgHmSKLkJg4Z4RrUeW_T3OuCG1qQWMoPGlYE9RECYk5JvrOVPKZptH1xUTfeuwCCfoR0zElyEHJuQYIAfbNkbUeBdYNn7EfOyGi8mO8cJC-pusgmzcxyZuVCS4OYrU/s1600/3x-ui-14.webp)
+![3x-ui 添加入站列表](/images/protocols/3x-ui-14-0e92d92699.png)
 
 二维码
 
-![3x-ui 添加入站列表](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgTPUlmC6iGm7EvQ7hpqKgMp4bP-akblFSkq4MLIBbE9EB2yernpBtrABF2aEPEevM_-a6Fe4bT5CKmX-wauk3cu1udIlKyDAiDb4t6bliXlpPl9JOfthCXPWQsbcN7tJSVHwpdyigdFAPKMPoLbljb5zUcl2xuGulfKR_zlbC-U2dAsKblAn33g0IVVG8/s1600/3x-ui-15.webp)
+![3x-ui 添加入站列表](/images/protocols/3x-ui-15-a2c976caa3.png)
 
 ---
 
