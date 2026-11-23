@@ -1,0 +1,308 @@
+---
+title: "2026 最新 3x-ui 面板搭建教程（一）：VPS 选择、域名端口规划与安装教程"
+description: "3x-ui 是目前公认最强大、最易用的 Xray 图形化管理面板之一，原生支持 VLESS、VMess、Trojan、Shadowsocks 等主流代理协议。搭配 VLESS-Reality 使用时，无需申请证书即可实现极强的抗封锁与抗探测能力。凭借直观的 Web 可视化界面与丰…"
+sidebar:
+  order: 3
+  label: "3x-ui（一）面板安装"
+---
+
+3x-ui 是目前公认最强大、最易用的 Xray 图形化管理面板之一，原生支持 VLESS、VMess、Trojan、Shadowsocks 等主流代理协议。搭配 VLESS-Reality 使用时，无需申请证书即可实现极强的抗封锁与抗探测能力。凭借直观的 Web 可视化界面与丰富的扩展性，3x-ui 已成为自建代理节点的主流首选方案。
+
+### 📚 系列导航：3x-ui 面板保姆级教程（共 6 篇）
+
+本文是该系列的第一篇，建议按顺序阅读，配置更顺畅：
+
+- **第一篇：准备工作、域名端口规划、面板安装教程（本文）**
+- [第二篇：配置 VLESS + Reality 节点详细教程](/protocols/3x-ui-guide-2/)
+- [第三篇：配置 VLESS + WS + Cloudflare CDN 节点详细教程](/protocols/3x-ui-cloudflare-cdn/)
+- [第四篇：配置 Hysteria 2 节点详细教程](/protocols/3x-ui-hysteria2/)
+- [第五篇：配置 静态住宅 IP 节点详细教程](/protocols/3x-ui-residential-proxy/)
+- [第六篇：通过单面板集中管理多台 VPS 节点](/protocols/3x-ui-multi-node/)
+
+---
+
+本教程将系统讲解目前最主流的三种方案的完整部署流程：VLESS + Reality、Hysteria 2 (Hy2) 以及 WebSocket + Cloudflare CDN，并对核心参数进行全方位解构与说明。文中涉及的配置逻辑基于个人实战经验整理，如有疏漏或更优解，欢迎交流指正。
+
+这是一篇面向全人群的 3x-ui 保姆级搭建指南。遵循本教程的步骤，你可以在 15 分钟内快速搭建出安全、稳定且高速的自建节点，并可根据实际场景灵活扩展出 REALITY 直连、中转加速以及静态住宅 IP 落地等多种网络架构。
+
+---
+
+## 准备工作
+
+### 1. VPS 系统选择
+
+如果你的 VPS 仅用于搭建 3x-ui，在系统选择方面，建议首选 Debian，次选 Ubuntu。Debian 以"极简"著称，系统默认安装的组件极少。(推荐搬瓦工 VPS [BandwagonHost](https://bwh81.net/aff.php?aff=76707))
+
+- **内存占用** 刚安装完的 Debian 内存占用通常在 100MB-200MB 左右，而 Ubuntu 往往在 300MB-500MB 左右（具体数值因云厂商镜像而略有差异）。对于搬瓦工这种资源宝贵的 VPS，省下的内存可以给 3x-ui 提供更稳定的缓存空间。
+- **无冗余服务** Ubuntu 默认带有很多不需要的后台服务（如 Snap, Netplan 等），在调试 Hysteria2 这种高性能协议时，越纯净的系统冲突越少。
+- **稳定** Debian 的包管理器 `apt` 极其成熟。
+- **现代** Debian 12/13 默认自带较新的内核，这对开启 BBR 加速非常友好，能让你在搭建 Hysteria2 时获得更好的网络吞吐量。
+
+---
+
+### 2. Cloudflare 域名解析
+
+（可选）
+
+3x-ui 支持多种协议节点配置，例如配置 Reality / Hysteria 2 节点作为日常使用，WS+CDN 作为备用保命节点，根据需要解析绑定域名，并分别申请 SSL 证书。（[免费域名](https://www.zoio.net/2026/02/free-indevs-in-domain.html) / [购买域名](https://www.zoio.net/2026/01/namesilo.html)）
+
+| 域名示例 | SSL 证书申请方式 | CDN | 作用 |
+| --- | --- | --- | --- |
+| `ny.zoio.sryze.cc` | 内置 acme.sh | 不启用 CDN | 3x-ui 面板访问、Reality 节点、Hysteria 2 节点 |
+| `ny-cdn.zoio.sryze.cc` | Cloudflare API Token | 启用 CDN | WebSocket + Cloudflare CDN |
+
+域名规划只做建议，如果只需要配置 Reality 节点，无需域名。域名推荐但非必要。
+
+将域名[托管到 Cloudflare](https://www.zoio.net/2026/01/cloudflare.html)，配置子域名，将 A 记录指向服务器 IP。
+
+![Cloudflare 域名解析](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiNRp7GnDnH758J0yqgmV99Yjdpf1-vn_v6iM-Fb4NnArq6IrlWol99aWAYUIABc3-eLvCplIMaZK2cYpXoCox88Dn1FbmY0rQP4-55wQZidAcjexbP4bfOVneSg86ngwJn1TaFSRimOyPoGJY-6VSdUpWEO2DZZC09vZX6HbeDdPK0CJu1ex98KkS7jYc/s1600/3x-ui-1-0.webp)
+
+Cloudflare 域名解析
+
+---
+
+### 3. 端口规划
+
+为了实现隐蔽与性能的完美平衡，我们对 VPS 端口进行了以下分配规划：
+
+| 协议组合 | 监听端口 | 核心定位 | 推荐场景 |
+| --- | --- | --- | --- |
+| 3x-ui 面板 | `2087` | 面板监听端口 | 使用非标常用端口，可自定义 |
+| 3x-ui 订阅端口 | `2096` | 订阅监听端口 | 3x-ui 面板默认配置，了解即可 |
+| Reality | `443` | 最强伪装 | 日常主力，模拟真实 HTTPS 流量，极难被墙 |
+| Hysteria 2 | `自定义` | 暴力加速 | 游戏、4K 视频 |
+| WS + CDN | `2053` | 保命备用 | IP 被墙时的最后防线，通过 Cloudflare 中转 |
+
+提示：如果后续需要为 3x-ui 面板登录域名配置 CDN，Cloudflare 支持的 HTTPS 代理端口为：`443`、`2053`、`2083`、`2087`、`2096`、`8443`（2096 已被订阅端口占用，故不可重复用于 CDN），若不使用 CDN 代理则可随意自定义。每个端口只能使用一次。
+
+---
+
+### 4. VPS 系统更新与安装必要依赖
+
+使用 [Finalshell](https://www.zoio.net/2026/03/finalshell.html) 通过 SSH 连接至 VPS 后，先更新软件源并升级系统软件包：
+
+```bash
+apt update && apt upgrade -y
+```
+
+提示：升级过程中若弹出 `Configuring openssh-server` 配置对话框，请选择第二项 `keep the local version currently installed`（保留当前本地版本），避免 SSH 配置被覆盖导致连接中断。
+
+随后安装必要的网络基础依赖：
+
+```bash
+apt install -y curl wget
+```
+
+---
+
+## 安装 3x-ui 面板
+
+| 项目名称 | 当前最新版本 | 项目地址 | 更新日期 |
+| --- | --- | --- | --- |
+| **3x-ui** | ![](https://img.shields.io/github/release/MHSanaei/3x-ui) | [GitHub 项目地址](https://github.com/MHSanaei/3x-ui) | ![](https://img.shields.io/github/release-date-pre/MHSanaei/3x-ui?display_date=published_at) |
+
+### 1. 一键脚本安装 3x-ui 面板
+
+复制并运行以下一键安装脚本：
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+```
+
+![3x-ui 安装脚本运行截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjFLpKhfWtg9j8VwxrDNDRfeQDvxxbRtNtHaX9QMzvZ1FUUfNFyPKi1B54kehATMn6iQMY1KnBSfEIGX9I0LBlesSO7GNtjbOumBhOeiY4NdhGAF9WJ-KwbO5wpPSbmiokvh2w5yjaWFQ27ce_JODjxI_hKmlXFdnOBK_uM6x8gIyFGrhrxVYOtL2nkIHM/s1600/3x-ui-1-1.webp)
+
+3x-ui 安装脚本运行
+
+脚本运行后，根据提示依次完成以下配置：
+
+---
+
+### 2. 数据库选择、端口配置
+
+![3x-ui 安装 数据库选择、端口配置截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjQlDkqz3G6HDLHOLALF1QyPGufitL3INVzbEDa05uuk0yHVzQ9r_A1RSZqSKHZivTpYshShD4LnLuTxE1S9OtANvU4aJCTV2jnmQv-EACJHSsDs4ASBVMWJR_lblhKC2Dx4MSmqq5cKtAMA_mYo9zP_0gWuxCfw_nSkoV5a_tSNLBVHTdNCNWifooJfcg/s1600/3x-ui-1-2.webp)
+
+3x-ui 数据库选择、端口配置截图
+
+- **Database Selection** 数据库选择：
+  - 1) SQLite（默认 — 推荐客户端少于 500 个时使用）
+  - 2) PostgreSQL（推荐客户端数量较多或节点较多时使用）
+  - 在此输入：「 `1` 」并回车（常规节点使用默认 SQLite 即可）
+- **Would you like to customize the Panel Port settings? (If not, a random port will be applied):**
+  - 您是否想要自定义面板端口设置？（如果不设置，将使用随机端口）[y/n]：输入「 `y` 」并回车
+- **Please set up the panel port:**
+  - 请设置面板端口：输入自定义端口，例如「 `2087` 」并回车
+
+提示：如果后续需要为 3x-ui 面板登录域名配置 CDN，Cloudflare 支持的 HTTPS 代理端口为：`443`、`2053`、`2083`、`2087`、`2096`、`8443`，若不使用 CDN 代理则可随意自定义。每个端口只能使用一次。
+
+---
+
+### 3. SSL 证书设置
+
+**SSL Certificate Setup (RECOMMENDED)** SSL 证书设置：
+
+![3x-ui SSL 证书配置截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhsVvGA2RdBAJMu7YGSczNtvQcohZuMrE2SsMOVAt2AlgeF6sH3q-s2k2Dxy-kOCYFYzhLnwFHbDsyivJHhOfhlbHTA8U43wbRr2eP8fi5w6ZicBe_s4SK9AYui4Qt3K5c2XGpPeOhzv8qA1tH7tnL6sRa9DoTPUvvYbhjqNlVVsttTHR5-WId74EFPcyQ/s1600/3x-ui-1-3.webp)
+
+3x-ui SSL 证书配置截图
+
+- **Choose SSL certificate setup method:** 选择 SSL 证书设置方式：
+  - 选择一个选项（IP 模式默认选 2）：保持默认选择「 `回车` 」。
+- **Is xxx.xxx.xxx.xxx the correct incoming public IPv4 address for this server? [Default y]:**
+  - 提示显示服务器公网 IPv4 是否正确，直接保持默认「 `回车` 」即可。
+- **Do you have an IPv6 address to include? (leave empty to skip):**
+  - 是否有 IPv6 地址需要包含？（留空直接跳过）：如无特殊需求，直接留空并「 `回车` 」跳过。
+- **Port to use for ACME HTTP-01 listener (default 80):**
+  - 用于 ACME HTTP-01 监听的端口（默认 80）：保持默认 `80`，直接「 `回车` 」。
+
+---
+
+### 4. 3x-ui 安装完成
+
+当终端出现 **x-ui control menu usages (subcommands)** 菜单时，代表面板已成功安装完成。
+
+![3x-ui 安装完成截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEi1Q7x_FlXzPfmSS9gOM86GL3alIpYaZHSWPpI2PpPQ94lzxcCfWejkn0VotsW6kpxlSOVKaQh_c1vhsnr0luGji1dxGk5-tH2JocshAcSFP0JUjcTHMqo11KjaDcK4ToEDP7GrhssUHKyy-_ByRdKsnvPW8Wbnz3ufvb5n7YZm2uiRmxu-APV12q_RqbU/s1600/3x-ui-1-4.webp)
+
+3x-ui 安装完成
+
+向上滚动终端日志，找到 **Panel Installation Complete!** 提示区域，即可查看面板的后台登录凭据。
+
+终端输出的高亮日志中将包含 `Username：用户名`，`Password：密码`，`Port：端口`，`Access URL：管理地址` 等信息，请妥善记录保存。
+
+![3x-ui 面板登录凭据截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhYxU9MWXFkKQhQhjU4b1nNrjufEYHRHf9wK3L1ewQIXf96YdpMpZbksM-ToUw92-AXs26Jwz3pP_vC00kDpJ3MdFJKTn97EwVMLm2gDiJzfGPHyaHFJCbkYP88tQwLtPgziSUF8QKwyI0yaPQqbGr2oYROQbAFzFJwxYk2b6NVpyU-OYTve_QKVIbphoM/s1600/3x-ui-1-5.webp)
+
+3x-ui 面板登录凭据截图
+
+---
+
+### 5. 开启 BBR 加速
+
+在终端输入 `x-ui` 调出 3x-ui 面板管理脚本。
+
+![3x-ui 管理脚本菜单截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhMJSUFUwVlezjbr3JWCXST2SSZrX1v6eJoD_8DnbxgdTFsxyN7XZ-bnlmTADuxYCcHtL6wQW5ksixogxM7YrLJ9dbMJBXut73Hwog_qqZusl6VspSvSgGitV57-Vs7QkW5dmdEjj9mqwyAcxcf2rvNP9hsuSFGtcnjff_QU4DZgX-9uj25XUeCJ-gKknE/s1600/3x-ui-1-6.webp)
+
+3x-ui 管理脚本菜单截图
+
+在脚本菜单中选择对应的 BBR 开启选项：
+
+![3x-ui 开启 BBR 加速截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiiWQXVbzzr18XO7qs6sHcs7wsdhsAC82gtlp3cy0HtdOC5epsYoKmzGfFpaSLvdbDLo8HS4DrIn9wXZ4J278R0gr48H4os4zg49-iK9a64Ow725ufdh7TIExYEKgAgF4_y4Tst4ABDl0H3puwtpJuLqJxcprbu-tBR1ZcGrdPlilHRMhFgjw-HUCA4CCA/s1600/3x-ui-1-7.webp)
+
+3x-ui 开启 BBR 加速截图
+
+- **Please enter your selection [0-28]** 请输入您的选择 [0-28]：输入对应 **Enable BBR** 的编号「 `26` 」并回车（不同版本脚本菜单编号可能有变化，请以实际显示的菜单为准）。
+  - 子选项中选择「 `1` 」开启 BBR 并回车。
+- 提示：**BBR is already enabled!**，BBR 已经处于开启状态！输入「 `0` 」返回主菜单。
+
+至此，3x-ui 面板已全部安装完毕。如暂时没有域名，可直接使用服务器 IP 和端口登录面板并配置节点。（VLESS-Reality 协议不需要域名）
+
+---
+
+## 申请 SSL 证书
+
+如果你有域名，并希望通过域名登录管理面板、配置节点，需要对域名进行绑定，并申请 SSL 证书。
+
+### 1. 申请 SSL 证书
+
+3x-ui 内置了 acme.sh 脚本用于申请 SSL 证书。在终端输入 `x-ui` 重新进入管理脚本：
+
+![3x-ui SSL 证书申请截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh_ODLpC7GLc5wzdRw1crVzuDUPUEX6Bo8N5fRGYrAxpFJrRQDR4qJGYR-zydgctJFymxAUVyxOlrYiPEglxTtiAK_zYovJvp78vra0saM1tTt7M9Tm-WR_QSAr_g1bD0MO6dAOWu3Bxl_w7xYGQCQyuNoW39xCiGyOwJp3LxOXjBq_DSN24HiDmg-F-IE/s1600/3x-ui-1-8.webp)
+
+3x-ui SSL 证书申请截图
+
+- **Please enter your selection [0-28]** 输入「 `20` 」进入 SSL 证书管理菜单。
+  - 选择「 `1` 」（Get SSL - Domain）申请域名 SSL 证书，并回车确认。
+- **Please enter your domain name:** 请输入域名：
+  - 输入已解析至 VPS IP 的域名，例如「 `ny.zoio.sryze.cc` 」并回车。
+- **Please choose which port to use (default is 80):** 选择监听端口：
+  - 保持默认 `80`，直接「 `回车` 」。
+
+---
+
+### 2. ACME --reloadcmd 设置
+
+![3x-ui ACME reloadcmd 设置截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjHOz2FDS_7eXmidWm-OqtrMpLHUbnWXdjrpQfpDU5v_WkqBkx0_xH9l30x9RkYvQGpbbRPNuEgT1sxprJmWHjo6D5dLh3SOFFIrI7t9HlIyoG4F4H8j1JnlH9FB9Dr136I32Zwxe0NQzz-PpJiC-o8j_CjTjf4CwAK7SC8fy6Fnr0THApUsSlKiAtnZXU/s1600/3x-ui-1-9.webp)
+
+3x-ui ACME reloadcmd 设置截图
+
+- **Would you like to modify --reloadcmd for ACME?**
+  - 询问是否想要修改 ACME 的重载命令时，直接输入「 `n` 」并回车保持默认。
+
+---
+
+### 3. 将此证书配置给面板使用
+
+![3x-ui 证书绑定面板截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh0LhEx2jDWveExvzY2fgbUPUhlqEH7qT4XWVhbBN7x6nANpBE_Htub26pvFou6GcXsiXfOHIhAsfyqDdjZlStKSyCsKPSxpr7VXS-EmmaVlKlOS6Xv2j0jdD8t8nd80xoudhG75-4QmbCHEnIkmaz_4IL_x5BAU4pQ3fqThfPoD73vubYiCD63PQ1-Z7c/s1600/3x-ui-1-10.webp)
+
+3x-ui 证书绑定面板截图
+
+- **Would you like to set this certificate for the panel?**
+  - 是否将此证书配置给面板使用？输入「 `y` 」并回车。
+
+证书申请成功后，请注意记录新的 `Access URL（管理地址）`。此时面板登录地址已由纯 IP 自动变更为绑定的域名，SSL 证书申请与域名绑定至此全部完成。
+
+---
+
+## 3x-ui 必要配置
+
+### 1. 登录 3x-ui
+
+在浏览器地址栏输入刚才保存的 Access URL（管理地址），即可访问登录界面。
+
+![3x-ui 登录界面截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiKd1VEL0vJz21IDSUnZB-vtEo4h_6Is90a4Cftb8d6qY_u4GXo_-kiPz_TpIvaMJuTQdDDIsNcvmcKp2JKkij7wL0lHIHehSKM9FYEYAkm-BDa54TnobvEPsjwLFiGq1HAqkP_NOJs6j7SyHxTPodT8x8bD_N7O9jgFm0KafrxOnFZUU2qHge06bRLvVI/s1600/3x-ui-1-11.webp)
+
+3x-ui 登录界面截图
+
+---
+
+### 2. 修改默认账号密码
+
+自动生成的账号密码不易记忆，我们可以修改默认的账号及密码，在后台选择「 面板设置 」-「 安全设定 」-「 管理员凭据 」修改默认账号密码。
+
+![3x-ui 修改默认账号密码截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhWWJ6pZmELFo2MTYmfezfDMPk_jiM2m8hjmEDTdsjIWmg_fKsp1w0Z0aDedIuLQ594lxMRT0wdCJRdgIi-NfIM5U4Ct5gMEFXfD9OO3G5Z994M3mE01Jt2ave4DhuWfW-SuMJgBZmksPS4DwRhInfZrf4r4Hf-pHPr-uQmk01gFp9ctHRX13tEh4ExgnE/s1600/3x-ui-1-12.webp)
+
+3x-ui 修改默认账号密码截图
+
+---
+
+### 3. 修改默认登录路径
+
+在后台选择「 面板设置 」-「 常规 」-「 URI 路径 」修改默认登录路径。
+
+![3x-ui 修改默认登录路径截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgV8DwOZABmQwlKdQPIu2RuOLzDd_RgfgTil5UvBun1vdKOYupPa-CZes9jLqTbjj2Piuu7N1BHY_gLIt52eiYIyCviB2QxP7ERfcA811AuW34OcE2PefSs9yrP6Uyqmahh4x5z79wl9ESArSc20WcoIiskgBC6v-k6ZazrNU0M_4V50juZ2f1qVRfvnW4/s1600/3x-ui-1-13.webp)
+
+3x-ui 修改默认登录路径截图
+
+修改完后一定要点击上方的 **保存** - **重启面板**
+
+---
+
+### 4. 订阅配置
+
+在后台选择「 面板设置 」-「 订阅设置 」。
+
+- Clash / Mihomo 订阅：「 启用 」（开启后支持 Clash 订阅）
+- URI 路径：自定义，替换默认的 sub
+
+![3x-ui 订阅配置截图](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgwgYENVmvWfJvF-hgRYVpS3MLbMSFWICygqpWFyr9IsLAHLG-QbcIeXTb_zgzpQjml0WoibjdEkL8zSDARgaTh2-sbKvOfk-8Xn6bS_A_uo4PJWJEAqkP4jEI4gDVcPYkFKK1c5qMhIuNjgCEf6AKHZhLwoyE5jZlI1WnYQ7YgVRJ0qS1rdKqlbtYUPNg/s1600/3x-ui-1-14.webp)
+
+3x-ui 订阅配置截图
+
+修改完后一定要点击上方的 **保存** - **重启面板**
+
+---
+
+## 配置 VLESS + Reality 节点
+
+Reality 是目前最推荐的日常协议，它不需要申请证书，而是通过"借用"知名大型网站（如微软、苹果）的证书来伪装你的流量。防火长城检测到的是正规网站的 TLS 特征，因而放行。
+
+具体配置步骤请参考下一篇文章：
+
+- [第二篇：配置 VLESS + Reality 节点详细教程](/protocols/3x-ui-guide-2/)
+- [第三篇：配置 VLESS + WS + Cloudflare CDN 节点详细教程](/protocols/3x-ui-cloudflare-cdn/)
+- [第四篇：配置 Hysteria 2 节点详细教程](/protocols/3x-ui-hysteria2/)
+- [第五篇：配置 静态住宅 IP 节点详细教程](/protocols/3x-ui-residential-proxy/)
+- [第六篇：通过单面板集中管理多台 VPS 节点](/protocols/3x-ui-multi-node/)
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-08-26，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[2026 最新 3x-ui 面板搭建教程（一）：VPS 选择、域名端口规划与安装教程](https://www.zoio.net/2026/04/3x-ui-guide.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>

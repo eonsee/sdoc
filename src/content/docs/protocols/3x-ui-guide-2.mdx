@@ -1,0 +1,179 @@
+---
+title: "2026 最新 3x-ui 面板搭建教程（二）：配置 VLESS + Reality 节点详细教程"
+description: "Reality 是目前最推荐的日常协议，它不需要申请证书，而是通过\"借用\"知名大型网站（如微软、苹果）的证书来伪装你的流量。防火长城检测到的是正规网站的 TLS 特征，因而放行。"
+sidebar:
+  order: 4
+  label: "3x-ui（二）VLESS Reality"
+---
+
+Reality 是目前最推荐的日常协议，它不需要申请证书，而是通过"借用"知名大型网站（如微软、苹果）的证书来伪装你的流量。防火长城检测到的是正规网站的 TLS 特征，因而放行。
+
+### 📚 系列导航：3x-ui 面板保姆级教程（共 6 篇）
+
+本文是该系列的第二篇，建议按顺序阅读，配置更顺畅：
+
+- [第一篇：准备工作、域名端口规划、面板安装教程](/protocols/3x-ui-guide-1/)
+- **第二篇：配置 VLESS + Reality 节点详细教程（本文）**
+- [第三篇：配置 VLESS + WS + Cloudflare CDN 节点详细教程](/protocols/3x-ui-cloudflare-cdn/)
+- [第四篇：配置 Hysteria 2 节点详细教程](/protocols/3x-ui-hysteria2/)
+- [第五篇：配置 静态住宅 IP 节点详细教程](/protocols/3x-ui-residential-proxy/)
+- [第六篇：通过单面板集中管理多台 VPS 节点](/protocols/3x-ui-multi-node/)
+
+---
+
+近期 3x-ui 面板更新较为频繁，功能与界面均有调整，本文基于较新版本（3.7.0）重新整理了一套完整的 VLESS + Reality 节点配置流程，供参考。
+
+## 前置准备：安装 3x-ui 面板
+
+如果你还没有安装 3x-ui 面板，请先参考系列第一篇《[3x-ui 面板保姆级教程（一）：准备工作、域名端口规划、面板安装教程](/protocols/3x-ui-guide-1/)》完成安装，再回到本文继续配置 Reality 节点。
+
+---
+
+## 配置 VLESS + Reality 节点 - 添加入站
+
+在「 入站 」-「 添加入站 」。
+
+![3x-ui VLESS + Reality 节点 添加入站](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg-y3peHHNfLhyphenhyphenzz1RWHR1g5aD1DSEaVSoWB5sj_e0lZS6YRMQWHKUh9C_4JF5cdo0DajBgtTNn2EoiipV52dmLUSbr3Bpet41qNlIxaquVnqiVVMP7PTDaS096b5VECjVeQSEqHVR1zPuDEiDmuErlgbrGLHZNBpuBgZqFflWoZSad8xOBC7X4z7Vazdg/s1600/3x-ui-2-1.webp)
+
+3x-ui VLESS + Reality 节点 添加入站
+
+---
+
+### 1. 添加入站 - 基础配置
+
+- **备注** 随便填，我是美国纽约的 VPS，我这里写的是 `🇺🇸 NY-Reality`，（[国旗 Emoji](https://www.zoio.net/2026/01/country-codes.html) ）
+- **协议** 选择 `vless`
+- **端口** 填写 `443`（因为真实的 HTTPS 网站都用 443 端口）
+- **其他** 保持默认
+
+![3x-ui VLESS + Reality 节点 添加入站 - 基础配置](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjECu4YpeVD-qEwS73O_kIUlimflW2-KQHuiqbTaNQx3v18bLBoR2JPu7V8wet1T-PJkclkXynzycJsLyCYus2XrwRgN1ZiNNd7tdCgCS46kVltTzRRbRcMg13ei33Mo8UrV4FXoOnMg_3SNggEKFVdupzMbAt6vq-fps9EnPp_O_LYWg93bXhCI22xP_A/s1600/3x-ui-2-2.webp)
+
+3x-ui VLESS + Reality 节点 添加入站 - 基础配置
+
+---
+
+### 2. 添加入站 - 协议
+
+- **协议** 协议这里保持默认，无需配置
+
+![3x-ui VLESS + Reality 节点 添加入站 - 协议](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhmEBbnRJuATNWanEtMhDL4TxF0sn9xCl_nIlkF6yqRToWDwBOiLhOW2KWf96Obz6Z6OAj0AEnaipopQ49tz2olFtsEOtNh0YdUhQcLO7tl4Wz1lhNsvzD-0aUR5OYALTlv4fThnL-9-8OKOG-TD1bSf4cUjY9hqKZKqVSxqSZ3ac013Rapbn17n0JUrvo/s1600/3x-ui-2-3.webp)
+
+3x-ui VLESS + Reality 节点 添加入站 - 协议
+
+---
+
+### 3. 添加入站 - 传输
+
+- **传输** 保持默认 `RAW`
+- **其他** 保持默认
+
+![3x-ui VLESS + Reality 节点 添加入站 - 传输](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiWeYG33CyyJH4HDil1Zy3NBdFC7zZVcNcLjQqZJnK3LR8CevkbuMSbKheawWWmBXU0VsQn1JRlko_rfd2TSnEFTKiX46ANeP3inSrz7xt3TUf4eyoNGP_peUJmg6Ae0VMxAVk2vmmXyIQZsnmDMWaBlpYTLoiSfJ1e36ZJc5UPGVIOH8bv88lm_waH088/s1600/3x-ui-2-4.webp)
+
+3x-ui VLESS + Reality 节点 添加入站 - 传输
+
+---
+
+### 4. 添加入站 - 安全
+
+- **安全** 选择 `Reality`
+- **uTLS** 保持默认 `chrome`
+- **目标** 查找目标，选择 `www.cloudflare.com:443`
+- **SNI** 只保留一个 `www.cloudflare.com`
+- **最小客户端版本** 输入 `1.0.0`
+
+最小客户端版本：留空不等于不限制：Xray-core 会改用所运行内核版本的内置最低值（当前版本为 26.3.27），拒绝自报版本更低的客户端——包括 Mihomo、sing-box 等第三方内核。填 1.0.0 可放行它们，代价是允许过时的 TLS 指纹。
+
+![3x-ui VLESS + Reality 节点 添加入站 - 安全](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiKMFCGw7EP-bsXO8Pe9T2tT8wrTVLzTcie0NAKIvJPgnao28q1Cy0H_TvuskA8p4FMAe5uUEoOeSTz0xlxQpr0m3OJVx4oYeLIlEEpGhQL5imZ31U_KCC-_JzsffivbL8JQ-GpnENM8c3ceaV7K4fogqerRfet-IvTC51xQmEeHdXmbe_t92NeEln36fc/s1600/3x-ui-2-5.webp)
+
+![3x-ui VLESS + Reality 节点 添加入站 - 安全](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjlja7hiprFBV2HBR5iTUXTY2fzR3zUkZAUoLds6FqHvssWlggeFJbnoQGy-bQviptcW2Yx3yU1lE9_A79JJ7AMG5m99_qDe2HYQHDtTBhyyX39yfbbHOLtRUr8CqBz5wOF1O1tThxYAnzJA_Q-LM11Cst3oyQJAyOOsRjOcl6-XMQNQRVaELoJuaQZs4M/s1600/3x-ui-2-6.webp)
+
+3x-ui VLESS + Reality 节点 添加入站 - 安全
+
+---
+
+### 5. 添加入站 - 嗅探
+
+- **启用** 点击启用
+- **勾选** 选择 `HTTP、TLS、QUIC`
+- **仅路由** 点击启用
+
+![3x-ui VLESS + Reality 节点 添加入站 - 嗅探](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgBwIt3WCqkfixQ3QsHwBKQ38yfdJP3e2nKwBkJi8xytGQWAsGuSKLKmp74oV9bNY3_dyE45bfG51icyui95ocH4xLmG1mqYVclaIU13FpfBySoU27poxlTIOnugXne358-tcG_x_GTSRfsfQP9Tc_CYqDJQGGvsxY3VWHMVx0VkDhYB8xTZlg8uGbikRc/s1600/3x-ui-2-7.webp)
+
+3x-ui VLESS + Reality 节点 添加入站 - 嗅探
+
+---
+
+## 配置 VLESS + Reality 节点 - 添加客户端
+
+「 客户端 」-「 添加客户端 」。
+
+![3x-ui VLESS + Reality 节点 添加客户端](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgpHPX3yHEAfoTVNjjsoHK89kXeWl0ZPEnFekn1Js7EWalJoU8X8QpyvL98XEZgAD12lxga-9Ce_OvGvO_7U6zMt4gp6lqDfuH3j_Uqg6bTuccjus7LnUEGGTTDtGg41_kqhbM2fGztAv1sgz72zZmkmK8lf0QqwA3okcwnnlZGcT5qwUz14CDTj_cJE1w/s1600/3x-ui-2-8.webp)
+
+3x-ui VLESS + Reality 节点 添加客户端
+
+---
+
+### 1. 添加客户端 - 基本
+
+- **邮箱** 随便填，会显示在节点名称上
+- **关联入站** 选择刚刚添加的入站节点
+- **其他配置** 流量及过期配置，自用无需配置
+
+![3x-ui VLESS + Reality 节点 添加客户端 - 基本](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhoFLqYFWZVwNHWGeZlCZuxCW6lPvGKKnrDEldcsov-B0gJcGB0wSSR7eE65LxeCgj1ERaaGLA3IihtVCKWBL5KfZ9QWkwbFOPtn1B93Lf73_2qCUr0xZMGn5sFu-0o4-BHS10pQ8GqCaengC33Ml-3EPcebUXEAhyphenhyphenoQCvYkzcZFZ-oMfaxTRiEM4cyXu0/s1600/3x-ui-2-9.webp)
+
+3x-ui VLESS + Reality 节点 添加客户端 - 基本
+
+---
+
+### 2. 添加客户端 - 凭据
+
+- **Flow** 流控：选择 `xtls-rprx-vision`，这是核心技术，用于穿透防火墙并提升速度
+- **其他配置** 保持默认
+
+![3x-ui VLESS + Reality 节点 添加客户端 - 凭据](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgSUU0jw5fUmU6DsgZVZZnDtNUp0tzVhGmrMw-p5Q5t4hbjKX_p5sIHBO2m71yM8wfBByuQOx77V9EPw8k8rS8SQi4AMQW9caYuyGuFm6FtEQi4EF4TAD2TDWEKrwBbVZYJd6vjuEc6IeuTfKVcTQ-UHHMY5eOjNWQSUFAOmLg1LO4uGsNEkFD536jOn6A/s1600/3x-ui-2-10.webp)
+
+3x-ui VLESS + Reality 节点 添加客户端 - 凭据
+
+---
+
+## 获取节点订阅链接
+
+添加完客户端信息后，点击 **客户端信息图标** 复制节点信息，复制到你的 [V2rayN](https://www.zoio.net/2026/01/v2rayn.html) 或者 [Passwall](https://www.zoio.net/2026/01/passwall.html) 中使用。
+
+![3x-ui VLESS + Reality 节点 节点订阅链接](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjs6lAMlIOGRBdqK46P6pNjrpda7H5Wuu3Uusprgi_By5paYkx5V8yMRUWcUminNGF8AFU_MhBYtnKxbORZ_WjOp38UBlRHrxKVImrKNKz4ew2bIz89BK_gffHne5KZqG8KHCQgxuFG2ObcF5wW8Yl_VRbzID_JhdWSknJet9I2yT6RsS5OeWlIr8bT7WQ/s1600/3x-ui-2-11.webp)
+
+3x-ui VLESS + Reality 节点 节点订阅链接
+
+---
+
+- **订阅信息**
+  - SUB：通用订阅链接
+  - CLASH：Clash 系订阅链接
+- **复制链接**
+  - 单条节点链接
+
+![3x-ui VLESS + Reality 节点 节点订阅链接](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiyNlhFjk8NfwmlCumulandrYqijcaU6tsAqutxY52_cYjecMSR6Vh0zGKRjBh1at0wtY8JkWiYhje9bnAZSbLoAXprw0Xce6jfauJ7ge767BwuILxiMzCkdQbyjP723mohkM4OjwHYJ4ED9IubtRCv9_ODSapCurYISoxSje2_cD1U307dsX7U_F6U1GI/s1600/3x-ui-2-12.webp)
+
+3x-ui VLESS + Reality 节点 节点订阅链接
+
+---
+
+## 在 V2rayN 中配置节点（示例）
+
+打开 V2rayN 添加订阅，详细的 V2rayN 使用教程可参考[V2rayN 使用教程](https://www.zoio.net/2026/01/v2rayn.html)。
+
+![在 V2rayN 中配置节点（示例）](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh60MyUrlw4xk4FJJ0atqVqkUIcQav6_XeHoZ3Rk60K779WJ5RWGCupLNpTJ0are-LQZoYZn_Eij4aKWi_xbuIbZJ6xrsrtumagiIPApDnNPPft9grVetTlPdR4lWZSPJd0Sr9bnHMYSyYAk5VcE51RRtEQp7nvnvjddTd2YzuAqmx3kfL0YzBqGqxUe4o/s1600/3x-ui-2-13.webp)
+
+在 V2rayN 中配置节点（示例）
+
+---
+
+## 下一步
+
+完成本篇配置后，可以继续阅读 [第三篇：配置 VLESS + WS + Cloudflare CDN 节点详细教程](/protocols/3x-ui-cloudflare-cdn/)，继续扩展你的 3x-ui 节点架构。
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-08-26，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[2026 最新 3x-ui 面板搭建教程（二）：配置 VLESS + Reality 节点详细教程](https://www.zoio.net/2026/06/3x-ui-guide.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>

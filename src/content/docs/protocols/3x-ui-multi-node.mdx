@@ -1,0 +1,115 @@
+---
+title: "2026 最新 3x-ui 面板搭建教程（六）：多面板节点集中管理"
+description: "在以往，如果我们拥有多台不同地区的 VPS（比如香港、日本、美国各一台），我们需要分别登录每一台 VPS 的 3x-ui 管理面板，单独创建节点、同步用户和统计流量，管理起来相当繁琐。"
+sidebar:
+  order: 8
+  label: "3x-ui（六）多面板管理"
+---
+
+在以往，如果我们拥有多台不同地区的 VPS（比如香港、日本、美国各一台），我们需要分别登录每一台 VPS 的 3x-ui 管理面板，单独创建节点、同步用户和统计流量，管理起来相当繁琐。
+
+### 📚 系列导航：3x-ui 面板保姆级教程（共 6 篇）
+
+本文是该系列的第六篇，建议按顺序阅读，配置更顺畅：
+
+- [第一篇：准备工作、域名端口规划、面板安装教程](/protocols/3x-ui-guide-1/)
+- [第二篇：配置 VLESS + Reality 节点详细教程](/protocols/3x-ui-guide-2/)
+- [第三篇：配置 VLESS + WS + Cloudflare CDN 节点详细教程](/protocols/3x-ui-cloudflare-cdn/)
+- [第四篇：配置 Hysteria 2 节点详细教程](/protocols/3x-ui-hysteria2/)
+- [第五篇：配置 静态住宅 IP 节点详细教程](/protocols/3x-ui-residential-proxy/)
+- **第六篇：通过单面板集中管理多台 VPS 节点（本文）**
+
+---
+
+好在 3x-ui 原生引入了强大的 **多节点支持**（Multi-node management / 星型拓扑集中管理）。通过主面板（Master）利用内部 API / 远程通信凭证，你可以实现在一个面板里统一添加、修改、监控多台子节点 VPS 的入站和客户端。
+
+---
+
+## 整体架构说明
+
+多节点管理采用标准的 Master-Worker（主从）星型拓扑结构：
+
+- **主面板**（Master）：作为你的中央控制台。你所有的用户、订阅、全局设置都在这里维护，它通过 API 统一指挥各个子节点。
+- **子节点**（Worker）：分布在不同地区、只负责运行 Xray 核心转发流量的 VPS。它们不需要你频繁单独登录，所有配置由主面板自动下发。
+
+---
+
+## 准备工作
+
+在开始配置前，请确保满足以下条件：
+
+- **两台或多台 VPS**：其中一台作为主面板（Master），其余作为子节点（Worker），可分布在不同地区，均已完成基础的 3x-ui 安装。
+- **面板版本**：确保两台 VPS 上已安装 3x-ui 并升级到最新版本。
+
+---
+
+## 配置受控节点（Worker VPS）
+
+首先需要登录你的子节点 VPS，为 Master 面板的远程调用开放 API 访问权限。
+
+登录子节点 VPS 的 3x-ui 管理面板。进入「 面板设置 」-「 安全设定 」-「 API 令牌 」新建令牌。
+
+![新建令牌](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjZsvBmnjEAV5GypF9weN_W2Q4oDDnwQ1TisPdmmLjqj-0mym_rCIyH8itJJdzfrwglk5R-X3hUmTDhTtqnFgFGyP7ONtkQf2Y4XAkIb_vcU9Z0nY2REt5kKh651wdAPq3mNHTznBR9zmLVPTop9nUmNK6stjXiYHJDiL61WLclQRG47joVtOHSJrlIzDQ/s1600/3x-ui-6-1.webp)
+
+新建令牌
+
+---
+
+## 在主面板（Master）中添加远程节点
+
+接下来切换到你的**主控服务器面板**，将子节点添加进来。
+
+在左侧菜单栏中找到「 节点 」点击「 添加节点 」。
+
+![添加节点](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjgYgoXN7Ohhfu5yf7eSLDgufaRknwfgHWodBw5PN4NCDkLKwHPrxHxon6o5MJMEK3kQ4_5eYnQXj0yPWnvYP_KeT7IXwiGwfgKLWjAuyOTncccvmbG1tW7eAXGx6_4dzI8PkiDPlLxvFnw2b_vpMO1QqMPNlS_83_w9mSvvQBIcM9pjDoPqT02grcdcoE/s1600/3x-ui-6-2.webp)
+
+添加节点
+
+在「 添加节点 」（Add Node）表单中填写以下信息：
+
+- **名称/备注** 自定义
+- **协议** 保持默认 `https`
+- **地址** 子节点 VPS 的 IP 地址或域名
+- **端口** 子节点 3x-ui 面板的访问端口
+- **基础路径** 子节点 3x-ui 面板的访问路径
+- **API 令牌** 填入子节点创建的 API 令牌
+
+点击保存测试连接。如果显示连接成功，说明主面板已经成功通过 API 牵手了这台子节点。
+
+![添加节点 - 连接测试成功](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj04GumdOZ5wuzKCLsbEX5EVuyOavFQYRr429GmFOUbMTQ2cW7Lmei4d2I_NnGldt141D_tzg01eK7Fr31gV7vhhQZEq2CnwqD7AHnageVs9zS1KQ2RULAnpLevrRbG57-OWPnzq_TX4-1bRriH_Fx-B4PetSLhrc_8h1G1ahST258y78zJRmJjIOYeOdE/s1600/3x-ui-6-3.webp)
+
+添加节点 - 连接测试成功
+
+添加成功后，可在主面板查看子节点的状态、CPU、内存、Xray 版本等信息。
+
+![子节点状态与资源信息](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgWKcyvjC3a6AeOmEu2Lgfx4mAlMMVbQImRFii3UxDL8aX9K3A97SO1k5bhWVviHF4WaWtCPFKcRYuo4X0WexcR1nJohxupgKTEoLw5dh0gvCY_KmkTYgPNJ67I1M4QZAEWgUrsM4U7HgQFcAmt5LShxi1vQ3rIQjfgPRyTpmzXQXUrvbzQDczaV9ItZf4/s1600/3x-ui-6-4.webp)
+
+子节点状态与资源信息
+
+---
+
+## 通过主面板在子节点上添加入站
+
+节点连通后，你就可以像管理本地节点一样管理远程子节点了：
+
+![远程子节点列表](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEi1CgsZkchgH_tkJjwqTvsTmGm_f5GKKgjTJr0gVguzINYM8UltQbkTtHD3pQiAxZMA0-qrIygaao54cpn-n2Rgf1tqJ40pAd6uBP7nkhz1EGtKO5bv32oWjMPiiNgD1jwl5HfyV5lotjChgP_PHRn7IcQUqJB_Od0xtCQw5gMGGiYJOuTJURqo6hVM6sc/s1600/3x-ui-6-5.webp)
+
+远程子节点列表
+
+在主面板 **添加入站** 时，面板会让你选择该入站生效的目标节点（你可以选择部署在主节点，也可以选部署到刚才添加的“纽约”上）。
+
+![添加入站 - 选择目标节点](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgyDYgp8NzK2UeQYobYj6T5vw3SBlDmsrYIriTdeZYlYtQMn2tp_niPFYIQuL9zR694Lg_MXwzFHjlRAQsUhtTCeiHgSBgsqF3bssTXb1asxpMpp3slWuXssG60-KBNIBgW27RFyYByla-xCmD-ACOVkPK8Ttt5MwDGaXD5TQGuYDEADrGYJSy0VEvrogg/s1600/3x-ui-6-6.webp)
+
+添加入站 - 选择目标节点
+
+多节点模式下，客户端的实时在线状态和流量数据会通过 API 定期回传给 Master 面板。如果发现延迟，可以检查两台 VPS 的系统时间是否同步（建议使用 ntp 或 chrony 校准时间，时间不同步会导致 API 认证失败）。
+
+## 写在最后
+
+至此，《3x-ui 面板保姆级教程》全系列 6 篇内容全部完结。如果你是从头开始搭建，建议按顺序回顾整个系列，逐步完善你的自建节点架构。
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-08-26，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[2026 最新 3x-ui 面板搭建教程（六）：多面板节点集中管理](https://www.zoio.net/2026/08/3x-ui-multi-node.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>

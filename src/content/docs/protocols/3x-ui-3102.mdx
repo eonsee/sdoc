@@ -1,0 +1,48 @@
+---
+title: "解决 3x-ui v3.10.2 升级后小火箭(Shadowrocket) 节点超时问题"
+description: "很多网友遇到了将 3x-ui 更新到 v3.10.2 或最新版本后，V2rayN 等桌面客户端正常，但 iOS 端的 Shadowrocket（小火箭）无法连接或节点连接超时的现象。本文将梳理该问题发生的核心原因及行之有效的解决方案。"
+sidebar:
+  order: 1
+  label: "3x-ui 3.10.2 超时"
+---
+
+很多网友遇到了将 3x-ui 更新到 v3.10.2 或最新版本后，V2rayN 等桌面客户端正常，但 iOS 端的 Shadowrocket（小火箭）无法连接或节点连接超时的现象。本文将梳理该问题发生的核心原因及行之有效的解决方案。
+
+## 问题原因总结
+
+1、**底层 Xray-core 自动升级带来兼容性变化：**
+
+- 3x-ui 在更新面板（如升级到 `v3.8.5`、`v3.10.2` 或更新版本）时，通常会同步升级底层的 Xray-core 内核（至 `v26.9.x` / `v26.10.x` 或更新版本）。
+- 从 Xray-core `v26.9.x` 开始，上游对 TLS 指纹检查（uTLS）、版本门控机制以及 REALITY 握手参数（例如引入了 `x25519mlkem768` 密钥交换/曲线支持）进行了严格收紧。
+
+2、**客户端（小火箭）TLS 指纹不匹配：**
+
+- 部分版本的 Shadowrocket 默认使用的 TLS 指纹（如传统的 `chrome` 等）未能完整适配新版 Xray-core 对 `x25519mlkem768` 曲线握手的强相关要求，导致服务端拒绝连接，日志中常伴随 `transport/internet/reality: REALITY: received real certificate` 报错，表现为连接超时或静默断开。
+- 而 V2rayN、Netch 等桌面客户端因内核更新及时或 TLS 指纹兼容性较好，故不受影响。
+
+---
+
+## 解决方案
+
+### 方案一：降级服务端的 Xray-core 内核（实测有效）
+
+直接将服务端的 Xray 内核回退到不受此握手限制影响的旧版本（如 `v26.7.28` 或 `v26.5.9`）：
+
+![解决 3x-ui v3.10.2 升级后小火箭(Shadowrocket) 节点超时问题](https://img.zoio.net/?url=//blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhJIno2st0163vwgfexsRc4lS9pcomFtnjqpkwWphnrROkURX8mMW8xsb8gY1-dkVN51xEymf7vF3aXb3ZB5dExJfusUGiiDSYJEDLOj4RcD4BG7eSrqEXVGOHg9YqO62qTQN25FpNClePaz3fF7tXMfNEzsgfdK8af0792BwIIyuGNISzv8RmCwdL7DiA/s1600/3x-ui-3102-1.webp)
+
+1. 登录 3x-ui 后台管理面板。
+2. 进入 **系统状态** 点击右上角的 Xray-core 版本。
+3. 手动选择并降级 Xray-core 版本至 `v26.7.28`。
+4. 降级完成后重启面板服务。无需修改移动端任何配置，Shadowrocket 即可恢复正常连接。
+
+### 方案二：修改 Shadowrocket 客户端 TLS 指纹（社区反馈）
+
+*（注：若不想降级服务端内核，可尝试此方案）*
+
+在 Shadowrocket 中编辑该节点，进入 **TLS 设置**，将 TLS 指纹修改为支持 `x25519mlkem768` 的现代浏览器指纹（例如 `Chrome140` 或最新 Chrome 指纹），保存后重新连接即可。
+
+---
+
+<Aside type="note" title="转载说明">
+  本文原作于 2026-10-24，作者 [P.Y.G](https://www.blogger.com/profile/15980663047667411974)，原文：[解决 3x-ui v3.10.2 升级后小火箭(Shadowrocket) 节点超时问题](https://www.zoio.net/2026/10/3x-ui-3102.html)。原文采用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 许可。本页转载时对 HTML 排版、图片地址和站内链接做了适配，正文内容未作改动。
+</Aside>
